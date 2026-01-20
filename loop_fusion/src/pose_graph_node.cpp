@@ -10,19 +10,20 @@
  *******************************************************/
 
 #include <vector>
-#include <ros/ros.h>
-#include <nav_msgs/Odometry.h>
-#include <nav_msgs/Path.h>
-#include <sensor_msgs/PointCloud.h>
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/image_encodings.h>
-#include <sensor_msgs/CameraInfo.h>
-#include <geometry_msgs/PoseWithCovarianceStamped.h>
-#include <visualization_msgs/Marker.h>
-#include <std_msgs/Bool.h>
+#include <rclcpp/node.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <sensor_msgs/msg/point_cloud.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/image_encodings.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <visualization_msgs/msg/marker.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <iostream>
-#include <ros/package.h>
+//#include <ros/package.h>
+#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -37,9 +38,10 @@
 #define SKIP_FIRST_CNT 2
 using namespace std;
 
-queue<sensor_msgs::ImageConstPtr> image_buf;
-queue<sensor_msgs::PointCloudConstPtr> point_buf;
-queue<nav_msgs::Odometry::ConstPtr> pose_buf;
+queue<sensor_msgs::msg::Image::ConstSharedPtr> image_buf;
+std::queue<sensor_msgs::msg::PointCloud::ConstSharedPtr> point_buf;
+//queue<nav_msgs::Odometry::ConstPtr> pose_buf;
+queue<nav_msgs::msg::Odometry::ConstSharedPtr> pose_buf;
 queue<Eigen::Vector3d> odometry_buf;
 std::mutex m_buf;
 std::mutex m_process;
@@ -69,10 +71,10 @@ camodocal::CameraPtr m_camera;
 double max_focallength = 460.0;
 Eigen::Vector3d tic;
 Eigen::Matrix3d qic;
-ros::Publisher pub_match_img;
-ros::Publisher pub_camera_pose_visual;
-ros::Publisher pub_odometry_rect;
-ros::Publisher pub_pose_rect;
+//ros::Publisher pub_match_img;
+//ros::Publisher pub_camera_pose_visual;
+//ros::Publisher pub_odometry_rect;
+//ros::Publisher pub_pose_rect;
 
 std::string BRIEF_PATTERN_FILE;
 std::string POSE_GRAPH_SAVE_PATH;
@@ -81,7 +83,7 @@ CameraPoseVisualization cameraposevisual(1, 0, 0, 1);
 Eigen::Vector3d last_t(-100, -100, -100);
 double last_image_time = -1;
 
-ros::Publisher pub_point_cloud, pub_margin_cloud;
+//ros::Publisher pub_point_cloud, pub_margin_cloud;
 
 void new_sequence()
 {
@@ -90,8 +92,9 @@ void new_sequence()
     printf("[POSEGRAPH]: sequence cnt %d \n", sequence);
     if (sequence > 5)
     {
-        ROS_WARN("only support 5 sequences since it's boring to copy code for more sequences.");
-        ROS_BREAK();
+        //ROS_WARN("only support 5 sequences since it's boring to copy code for more sequences.");
+        //ROS_BREAK();
+        // ROS2HACK - this is important problem
     }
     posegraph.posegraph_visualization->reset();
     posegraph.publish();
@@ -107,7 +110,7 @@ void new_sequence()
     m_buf.unlock();
 }
 
-void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
+void image_callback(const sensor_msgs::msg::Image::SharedPtr &image_msg)
 {
     //ROS_INFO("image_callback!");
     m_buf.lock();
@@ -116,21 +119,23 @@ void image_callback(const sensor_msgs::ImageConstPtr &image_msg)
     //printf("[POSEGRAPH]:  image time %f \n", image_msg->header.stamp.toSec());
 
     // detect unstable camera stream
+    /* // ROS2HACK
     if (last_image_time == -1)
-        last_image_time = image_msg->header.stamp.toSec();
+        last_image_time = 0;// ROS2HACK image_msg->header.stamp.toSec();
     else if (image_msg->header.stamp.toSec() - last_image_time > 1.0 || image_msg->header.stamp.toSec() < last_image_time)
     {
-        ROS_WARN("image discontinue! detect a new sequence!");
+        //ROS_WARN("image discontinue! detect a new sequence!");
         new_sequence();
     }
     last_image_time = image_msg->header.stamp.toSec();
+    */
 }
 
-void point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
+void point_callback(const sensor_msgs::msg::PointCloud::SharedPtr &point_msg)
 {
     //ROS_INFO("point_callback!");
     m_buf.lock();
-    point_buf.push(point_msg);
+    point_buf.push(point_msg); // In ROS1 it was just "push"
     m_buf.unlock();
     /*
     for (unsigned int i = 0; i < point_msg->points.size(); i++)
@@ -143,7 +148,7 @@ void point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
     }
     */
     // for visualization
-    sensor_msgs::PointCloud point_cloud;
+    sensor_msgs::msg::PointCloud point_cloud;
     point_cloud.header = point_msg->header;
     for (unsigned int i = 0; i < point_msg->points.size(); i++)
     {
@@ -152,19 +157,19 @@ void point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
         p_3d.y = point_msg->points[i].y;
         p_3d.z = point_msg->points[i].z;
         Eigen::Vector3d tmp = posegraph.r_drift * Eigen::Vector3d(p_3d.x, p_3d.y, p_3d.z) + posegraph.t_drift;
-        geometry_msgs::Point32 p;
+        geometry_msgs::msg::Point32 p;
         p.x = tmp(0);
         p.y = tmp(1);
         p.z = tmp(2);
         point_cloud.points.push_back(p);
     }
-    pub_point_cloud.publish(point_cloud);
+    //pub_point_cloud.publish(point_cloud);
 }
 
 // only for visualization
-void margin_point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
+void margin_point_callback(const sensor_msgs::msg::PointCloud::SharedPtr &point_msg)
 {
-    sensor_msgs::PointCloud point_cloud;
+    sensor_msgs::msg::PointCloud point_cloud;
     point_cloud.header = point_msg->header;
     for (unsigned int i = 0; i < point_msg->points.size(); i++)
     {
@@ -173,16 +178,16 @@ void margin_point_callback(const sensor_msgs::PointCloudConstPtr &point_msg)
         p_3d.y = point_msg->points[i].y;
         p_3d.z = point_msg->points[i].z;
         Eigen::Vector3d tmp = posegraph.r_drift * Eigen::Vector3d(p_3d.x, p_3d.y, p_3d.z) + posegraph.t_drift;
-        geometry_msgs::Point32 p;
+        geometry_msgs::msg::Point32 p;
         p.x = tmp(0);
         p.y = tmp(1);
         p.z = tmp(2);
         point_cloud.points.push_back(p);
     }
-    pub_margin_cloud.publish(point_cloud);
+    //pub_margin_cloud.publish(point_cloud);
 }
 
-void pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
+void pose_callback(const nav_msgs::msg::Odometry::SharedPtr &pose_msg)
 {
     //ROS_INFO("pose_callback!");
     m_buf.lock();
@@ -199,7 +204,7 @@ void pose_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     */
 }
 
-void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
+void vio_callback(const nav_msgs::msg::Odometry::SharedPtr &pose_msg)
 {
     //ROS_INFO("vio_callback!");
     Vector3d vio_t(pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.position.z);
@@ -215,7 +220,7 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     vio_t = posegraph.r_drift * vio_t + posegraph.t_drift;
     vio_q = posegraph.r_drift * vio_q;
 
-    nav_msgs::Odometry odometry;
+    nav_msgs::msg::Odometry odometry;
     odometry.header = pose_msg->header;
     odometry.header.frame_id = "global";
     odometry.pose.pose.position.x = vio_t.x();
@@ -227,7 +232,7 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
     odometry.pose.pose.orientation.w = vio_q.w();
     odometry.twist = pose_msg->twist;
     odometry.pose.covariance = pose_msg->pose.covariance;
-    pub_odometry_rect.publish(odometry);
+    //pub_odometry_rect.publish(odometry);
 
     Vector3d vio_t_cam;
     Quaterniond vio_q_cam;
@@ -236,13 +241,13 @@ void vio_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 
     cameraposevisual.reset();
     cameraposevisual.add_pose(vio_t_cam, vio_q_cam);
-    cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
+    //cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
 
 
 }
 
 
-void vio_callback_pose(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr &pose_msg)
+void vio_callback_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr &pose_msg)
 {
     //ROS_INFO("vio_callback!");
     Vector3d vio_t(pose_msg->pose.pose.position.x, pose_msg->pose.pose.position.y, pose_msg->pose.pose.position.z);
@@ -258,7 +263,7 @@ void vio_callback_pose(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr 
     vio_t = posegraph.r_drift * vio_t + posegraph.t_drift;
     vio_q = posegraph.r_drift * vio_q;
 
-    geometry_msgs::PoseWithCovarianceStamped odometry;
+    geometry_msgs::msg::PoseWithCovarianceStamped odometry;
     odometry.header = pose_msg->header;
     odometry.header.frame_id = "global";
     odometry.pose.pose.position.x = vio_t.x();
@@ -269,7 +274,7 @@ void vio_callback_pose(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr 
     odometry.pose.pose.orientation.z = vio_q.z();
     odometry.pose.pose.orientation.w = vio_q.w();
     odometry.pose.covariance = pose_msg->pose.covariance;
-    pub_pose_rect.publish(odometry);
+    //pub_pose_rect.publish(odometry);
 
     Vector3d vio_t_cam;
     Quaterniond vio_q_cam;
@@ -278,12 +283,12 @@ void vio_callback_pose(const geometry_msgs::PoseWithCovarianceStamped::ConstPtr 
 
     cameraposevisual.reset();
     cameraposevisual.add_pose(vio_t_cam, vio_q_cam);
-    cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
+    //cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
 
 
 }
 
-void extrinsic_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
+void extrinsic_callback(const nav_msgs::msg::Odometry::SharedPtr &pose_msg)
 {
     m_process.lock();
     tic = Vector3d(pose_msg->pose.pose.position.x,
@@ -297,38 +302,38 @@ void extrinsic_callback(const nav_msgs::Odometry::ConstPtr &pose_msg)
 }
 
 
-void intrinsics_callback(const sensor_msgs::CameraInfo::ConstPtr &msg)
+void intrinsics_callback(const sensor_msgs::msg::CameraInfo::SharedPtr &msg)
 {
     m_process.lock();
-    assert(msg->K.size()==9);
-    assert(msg->D.size()==4);
+    assert(msg->k.size()==9);
+    assert(msg->k.size()==4);
     cv::Size imageSize(msg->width, msg->height);
     if(msg->distortion_model == "plumb_bob") {
         m_camera = camodocal::CameraFactory::instance()->generateCamera(camodocal::Camera::ModelType::PINHOLE, "cam0", imageSize);
         std::vector<double> parameters;
-        parameters.push_back(msg->D.at(0));
-        parameters.push_back(msg->D.at(1));
-        parameters.push_back(msg->D.at(2));
-        parameters.push_back(msg->D.at(3));
-        parameters.push_back(msg->K.at(0));
-        parameters.push_back(msg->K.at(4));
-        parameters.push_back(msg->K.at(2));
-        parameters.push_back(msg->K.at(5));
+        parameters.push_back(msg->d.at(0));
+        parameters.push_back(msg->d.at(1));
+        parameters.push_back(msg->d.at(2));
+        parameters.push_back(msg->d.at(3));
+        parameters.push_back(msg->k.at(0));
+        parameters.push_back(msg->k.at(4));
+        parameters.push_back(msg->k.at(2));
+        parameters.push_back(msg->k.at(5));
         m_camera.get()->readParameters(parameters);
-        max_focallength = std::max(msg->K.at(0), msg->K.at(4));
+        max_focallength = std::max(msg->k.at(0), msg->k.at(4));
     } else if(msg->distortion_model == "equidistant") {
         m_camera = camodocal::CameraFactory::instance()->generateCamera(camodocal::Camera::ModelType::KANNALA_BRANDT, "cam0", imageSize);
         std::vector<double> parameters;
-        parameters.push_back(msg->D.at(0));
-        parameters.push_back(msg->D.at(1));
-        parameters.push_back(msg->D.at(2));
-        parameters.push_back(msg->D.at(3));
-        parameters.push_back(msg->K.at(0));
-        parameters.push_back(msg->K.at(4));
-        parameters.push_back(msg->K.at(2));
-        parameters.push_back(msg->K.at(5));
+        parameters.push_back(msg->d.at(0));
+        parameters.push_back(msg->d.at(1));
+        parameters.push_back(msg->d.at(2));
+        parameters.push_back(msg->d.at(3));
+        parameters.push_back(msg->k.at(0));
+        parameters.push_back(msg->k.at(4));
+        parameters.push_back(msg->k.at(2));
+        parameters.push_back(msg->k.at(5));
         m_camera.get()->readParameters(parameters);
-        max_focallength = std::max(msg->K.at(0), msg->K.at(4));
+        max_focallength = std::max(msg->k.at(0), msg->k.at(4));
     } else {
         throw std::runtime_error("Invalid distorition model, unable to parse (plumb_bob, equidistant)");
     }
@@ -339,14 +344,15 @@ void process()
 {
     while (true)
     {
-        sensor_msgs::ImageConstPtr image_msg = NULL;
-        sensor_msgs::PointCloudConstPtr point_msg = NULL;
-        nav_msgs::Odometry::ConstPtr pose_msg = NULL;
+        sensor_msgs::msg::Image::SharedPtr image_msg = NULL;
+        sensor_msgs::msg::PointCloud::SharedPtr point_msg = NULL;
+        nav_msgs::msg::Odometry::SharedPtr pose_msg = NULL;
 
         // find out the messages with same time stamp
         m_buf.lock();
         if(!image_buf.empty() && !point_buf.empty() && !pose_buf.empty())
         {
+            /* ROS2HACK
             if (image_buf.front()->header.stamp.toSec() > pose_buf.front()->header.stamp.toSec())
             {
                 pose_buf.pop();
@@ -374,6 +380,7 @@ void process()
                 point_msg = point_buf.front();
                 point_buf.pop();
             }
+            */
         }
         m_buf.unlock();
 
@@ -402,7 +409,7 @@ void process()
             cv_bridge::CvImageConstPtr ptr;
             if (image_msg->encoding == "8UC1")
             {
-                sensor_msgs::Image img;
+                sensor_msgs::msg::Image img;
                 img.header = image_msg->header;
                 img.height = image_msg->height;
                 img.width = image_msg->width;
@@ -455,11 +462,13 @@ void process()
                     //printf("[POSEGRAPH]: u %f, v %f \n", p_2d_uv.x, p_2d_uv.y);
                 }
 
-                KeyFrame* keyframe = new KeyFrame(pose_msg->header.stamp.toSec(), frame_index, T, R, image,
-                                   point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   
+                // ROS2HACK
+                //KeyFrame* keyframe = new KeyFrame(pose_msg->header.stamp.toSec(), frame_index, T, R, image,
+                //                   point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   
                 m_process.lock();
                 start_flag = 1;
-                posegraph.addKeyFrame(keyframe, 1);
+                // ROS2HACK
+                //posegraph.addKeyFrame(keyframe, 1);
                 m_process.unlock();
                 frame_index++;
                 last_t = T;
@@ -482,7 +491,7 @@ void command()
             m_process.unlock();
             printf("[POSEGRAPH]: save pose graph finish\nyou can set 'load_previous_pose_graph' to 1 in the config file to reuse it next time\n");
             printf("[POSEGRAPH]: program shutting down...\n");
-            ros::shutdown();
+            //ROS2HACK ros::shutdown();
         }
         if (c == 'n')
             new_sequence();
@@ -494,9 +503,11 @@ void command()
 
 int main(int argc, char **argv)
 {
+    /* // ROS2HACK
     ros::init(argc, argv, "loop_fusion");
     ros::NodeHandle n("~");
     posegraph.registerPub(n);
+    */
     
     VISUALIZATION_SHIFT_X = 0;
     VISUALIZATION_SHIFT_Y = 0;
@@ -524,7 +535,7 @@ int main(int argc, char **argv)
     cameraposevisual.setLineWidth(0.01);
 
 
-    std::string pkg_path = ros::package::getPath("loop_fusion");
+    std::string pkg_path;// ROS2HACK = ros::package::getPath("loop_fusion");
     string vocabulary_file = pkg_path + "/../support_files/brief_k10L6.bin";
     cout << "vocabulary_file" << vocabulary_file << endl;
     posegraph.loadVocabulary(vocabulary_file);
@@ -580,7 +591,7 @@ int main(int argc, char **argv)
         load_flag = 1;
     }
 
-
+    /*
     // Get camera information
     printf("[POSEGRAPH]: waiting for camera info topic...\n");
     auto msg1 = ros::topic::waitForMessage<sensor_msgs::CameraInfo>("/vins_estimator/intrinsics", ros::Duration(ros::DURATION_MAX));
@@ -595,8 +606,10 @@ int main(int argc, char **argv)
     printf("[POSEGRAPH]: received camera to imu extrinsics message!\n");
     std::cout << qic.transpose() << std::endl;
     std::cout << tic.transpose() << std::endl;
+    */
 
     // Setup the rest of the publishers
+    /* 
     ros::Subscriber sub_vio1 = n.subscribe("/vins_estimator/odometry", 2000, vio_callback);
     ros::Subscriber sub_vio2 = n.subscribe("/vins_estimator/pose", 2000, vio_callback_pose);
     ros::Subscriber sub_image = n.subscribe("/cam0/image_raw", 2000, image_callback);
@@ -612,6 +625,7 @@ int main(int argc, char **argv)
     pub_margin_cloud = n.advertise<sensor_msgs::PointCloud>("margin_cloud_loop_rect", 1000);
     pub_odometry_rect = n.advertise<nav_msgs::Odometry>("odometry_rect", 1000);
     pub_pose_rect = n.advertise<geometry_msgs::PoseWithCovarianceStamped>("pose_rect", 1000);
+    */
 
     std::thread measurement_process;
     std::thread keyboard_command_process;
@@ -619,7 +633,7 @@ int main(int argc, char **argv)
     measurement_process = std::thread(process);
     keyboard_command_process = std::thread(command);
     
-    ros::spin();
+    //ros::spin();
 
     return 0;
 }

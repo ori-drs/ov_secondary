@@ -6,14 +6,15 @@ set(CMAKE_BUILD_TYPE "Release")
 
 
 find_package(Boost REQUIRED COMPONENTS filesystem program_options system)
+
 include_directories(${Boost_INCLUDE_DIRS})
 
 find_package(Eigen3 REQUIRED)
-
 find_package(OpenCV 4 REQUIRED)
-
 find_package(Ceres REQUIRED)
 include_directories(${CERES_INCLUDE_DIRS})
+
+find_package(ament_cmake REQUIRED)
 
 include_directories(
   include
@@ -37,7 +38,7 @@ add_executable(Calibrations
     src/gpl/gpl.cc
     src/gpl/EigenQuaternionParameterization.cc)
 
-add_library(camera_models
+add_library(${PROJECT_NAME}
     src/chessboard/Chessboard.cc
     src/calib/CameraCalibration.cc
     src/camera_models/Camera.cc
@@ -54,3 +55,33 @@ add_library(camera_models
 
 target_link_libraries(Calibrations ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 target_link_libraries(camera_models ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+
+
+#############
+## Install ##
+#############
+
+install(TARGETS ${PROJECT_NAME}
+        ARCHIVE DESTINATION lib
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin)
+
+## Mark libraries for installation
+install(TARGETS ${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+
+
+install(DIRECTORY include/
+  DESTINATION include
+  FILES_MATCHING PATTERN "*.h"
+)
+
+
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+ament_export_dependencies(cv_bridge image_transport)
+ament_package()

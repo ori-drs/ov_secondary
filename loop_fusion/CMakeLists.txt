@@ -1,28 +1,24 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.8)
 project(loop_fusion)
 
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE "Release")
-set(CMAKE_CXX_FLAGS "-std=c++11")
-#-DEIGEN_USE_MKL_ALL")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 
-find_package(catkin REQUIRED COMPONENTS
-    roscpp
-    std_msgs
-    nav_msgs
-    camera_models
-    cv_bridge
-    roslib
-    )
-
-
-find_package(OpenCV 3 REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(OpenCV 4 REQUIRED)
 find_package(Ceres REQUIRED)
 find_package(Eigen3)
 
-include_directories(${catkin_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS}  ${EIGEN3_INCLUDE_DIR})
+find_package(cv_bridge REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(visualization_msgs REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(camera_models REQUIRED)
 
-catkin_package()
+
+include_directories(include ${CERES_INCLUDE_DIRS}  ${EIGEN3_INCLUDE_DIR})
 
 add_executable(loop_fusion_node
     src/pose_graph_node.cpp
@@ -41,3 +37,14 @@ add_executable(loop_fusion_node
     )
 
 target_link_libraries(loop_fusion_node ${catkin_LIBRARIES}  ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
+
+
+ament_target_dependencies(loop_fusion_node
+  rclcpp
+  nav_msgs
+  sensor_msgs
+  visualization_msgs
+  cv_bridge
+  ament_index_cpp
+  camera_models
+)

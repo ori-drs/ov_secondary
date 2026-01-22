@@ -48,7 +48,7 @@ class PoseGraph
 public:
 	PoseGraph();
 	~PoseGraph();
-	//ROS2HACKvoid registerPub(ros::NodeHandle &n);
+	void registerPub(rclcpp::Node::SharedPtr node);
 	void addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop);
 	void loadKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop);
 	void loadVocabulary(std::string voc_path);
@@ -93,7 +93,10 @@ private:
 	BriefDatabase db;
 	BriefVocabulary* voc;
 
-	//ros::Publisher pub_pg_path;
+
+
+        rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_pg_path;
+    	//ros::Publisher pub_pg_path;
 	//ros::Publisher pub_base_path;
 	//ros::Publisher pub_pose_graph;
 	//ros::Publisher pub_path[10];

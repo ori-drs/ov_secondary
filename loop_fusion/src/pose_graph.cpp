@@ -34,6 +34,15 @@ PoseGraph::~PoseGraph()
     t_optimization.detach();
 }
 
+
+
+
+void PoseGraph::registerPub(rclcpp::Node::SharedPtr node){
+
+    pub_pg_path = node->create_publisher<nav_msgs::msg::Path>("/pose_graph_path", 1000);
+
+}
+
 /*
 void PoseGraph::registerPub(ros::NodeHandle &n)
 {

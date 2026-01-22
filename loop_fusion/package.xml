@@ -20,6 +20,5 @@
 
   <export>
     <build_type>ament_cmake</build_type>
-    <build_type>camera_models</build_type>
   </export>
 </package>

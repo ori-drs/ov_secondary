@@ -39,6 +39,17 @@ add_executable(loop_fusion_node
 target_link_libraries(loop_fusion_node ${catkin_LIBRARIES}  ${OpenCV_LIBS} ${CERES_LIBRARIES}) 
 
 
+install(
+  DIRECTORY launch scripts config data
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(TARGETS loop_fusion_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+
+
 ament_target_dependencies(loop_fusion_node
   rclcpp
   nav_msgs
@@ -48,3 +59,4 @@ ament_target_dependencies(loop_fusion_node
   ament_index_cpp
   camera_models
 )
+ament_package()

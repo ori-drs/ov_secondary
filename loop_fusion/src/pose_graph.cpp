@@ -40,19 +40,12 @@ PoseGraph::~PoseGraph()
 void PoseGraph::registerPub(rclcpp::Node::SharedPtr node){
 
     pub_pg_path = node->create_publisher<nav_msgs::msg::Path>("/pose_graph_path", 1000);
-
-}
-
-/*
-void PoseGraph::registerPub(ros::NodeHandle &n)
-{
-    pub_pg_path = n.advertise<nav_msgs::msg::Path>("pose_graph_path", 1000);
-    pub_base_path = n.advertise<nav_msgs::msg::Path>("base_path", 1000);
-    pub_pose_graph = n.advertise<visualization_msgs::msg::MarkerArray>("pose_graph", 1000);
+    pub_base_path = node->create_publisher<nav_msgs::msg::Path>("/base_path", 1000);
+    pub_pose_graph = node->create_publisher<visualization_msgs::msg::MarkerArray>("/pose_graph", 1000);
     for (int i = 1; i < 10; i++)
-        pub_path[i] = n.advertise<nav_msgs::msg::Path>("path_" + to_string(i), 1000);
+        pub_path[i] = node->create_publisher<nav_msgs::msg::Path>("/path_" + to_string(i), 1000);
+
 }
-*/
 
 void PoseGraph::setIMUFlag(bool _use_imu)
 {
@@ -1129,18 +1122,16 @@ void PoseGraph::loadPoseGraph()
 
 void PoseGraph::publish()
 {
-    /* ROS2HACK
     for (int i = 1; i <= sequence_cnt; i++)
     {
         //if (sequence_loop[i] == true || i == base_sequence)
         if (1 || i == base_sequence)
         {
-            pub_pg_path.publish(path[i]);
-            pub_path[i].publish(path[i]);
-            posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
+            pub_pg_path->publish(path[i]);
+            pub_path[i]->publish(path[i]);
+            // ROS2HACK posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
         }
     }
-    pub_base_path.publish(base_path);
+    pub_base_path->publish(base_path);
     //posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
-    */
 }

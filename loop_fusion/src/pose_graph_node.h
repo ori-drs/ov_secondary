@@ -38,10 +38,11 @@ private:
     
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_match_img;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_camera_pose_visual;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_point_cloud;
-    rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_margin_cloud;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_odometry_rect;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pub_pose_rect;
+
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_point_cloud;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud>::SharedPtr pub_margin_cloud;
     
 };
 

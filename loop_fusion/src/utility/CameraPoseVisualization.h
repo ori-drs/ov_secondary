@@ -13,6 +13,7 @@
 #include <std_msgs/msg/color_rgba.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
+#include <sensor_msgs/msg/image.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <opencv2/opencv.hpp>
@@ -32,11 +33,12 @@ public:
 	void add_pose(const Eigen::Vector3d& p, const Eigen::Quaterniond& q);
 	void reset();
 
-	//ROS2HACK void publish_by(ros::Publisher& pub, const std_msgs::Header& header);
+    void publish_by( const rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr & pub, const std_msgs::msg::Header &header );
+
 	void add_edge(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1);
 	void add_loopedge(const Eigen::Vector3d& p0, const Eigen::Vector3d& p1);
 	//void add_image(const Eigen::Vector3d& T, const Eigen::Matrix3d& R, const cv::Mat &src);
-	//ROS2HACK void publish_image_by( ros::Publisher &pub, const std_msgs::Header &header);
+    void publish_image_by( const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr & pub, const std_msgs::msg::Header &header );
 private:
 	std::vector<visualization_msgs::msg::Marker> m_markers;
 	std_msgs::msg::ColorRGBA m_image_boundary_color;

@@ -34,9 +34,6 @@ PoseGraph::~PoseGraph()
     t_optimization.detach();
 }
 
-
-
-
 void PoseGraph::registerPub(rclcpp::Node::SharedPtr node){
 
     pub_pg_path = node->create_publisher<nav_msgs::msg::Path>("/pose_graph_path", 1000);
@@ -44,7 +41,6 @@ void PoseGraph::registerPub(rclcpp::Node::SharedPtr node){
     pub_pose_graph = node->create_publisher<visualization_msgs::msg::MarkerArray>("/pose_graph", 1000);
     for (int i = 1; i < 10; i++)
         pub_path[i] = node->create_publisher<nav_msgs::msg::Path>("/path_" + to_string(i), 1000);
-
 }
 
 void PoseGraph::setIMUFlag(bool _use_imu)
@@ -1129,9 +1125,9 @@ void PoseGraph::publish()
         {
             pub_pg_path->publish(path[i]);
             pub_path[i]->publish(path[i]);
-            // ROS2HACK posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
+            posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
         }
     }
     pub_base_path->publish(base_path);
-    //posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
+    posegraph_visualization->publish_by(pub_pose_graph, path[sequence_cnt].header);
 }

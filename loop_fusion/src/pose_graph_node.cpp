@@ -35,7 +35,6 @@
 #include "pose_graph.h"
 #include "utility/CameraPoseVisualization.h"
 #include "parameters.h"
-
 #include "pose_graph_node.h"
 
 
@@ -48,10 +47,7 @@ App::App(rclcpp::Node::SharedPtr node, const CommandLineConfig &app_params):
     pub_margin_cloud = node_->create_publisher<sensor_msgs::msg::PointCloud>("/margin_cloud_loop_rect", 1000);
     pub_odometry_rect = node_->create_publisher<nav_msgs::msg::Odometry>("/odometry_rect", 1000);
     pub_pose_rect = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/pose_rect", 1000);
-
 }
-
-
 
 
 #define SKIP_FIRST_CNT 2
@@ -218,7 +214,6 @@ void App::pose_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
     */
 }
 
-
 void App::vio_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
 {
     //ROS_INFO("vio_callback!");
@@ -256,7 +251,7 @@ void App::vio_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
 
     cameraposevisual.reset();
     cameraposevisual.add_pose(vio_t_cam, vio_q_cam);
-    //cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
+    cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
 
 
 }
@@ -298,7 +293,7 @@ void App::vio_callback_pose(const geometry_msgs::msg::PoseWithCovarianceStamped:
 
     cameraposevisual.reset();
     cameraposevisual.add_pose(vio_t_cam, vio_q_cam);
-    //cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
+    cameraposevisual.publish_by(pub_camera_pose_visual, pose_msg->header);
 
 
 }
@@ -538,13 +533,11 @@ void getParamOrExit(rclcpp::Node::SharedPtr nh, const std::string &param_field, 
 
 int main(int argc, char **argv)
 {
-
     rclcpp::init(argc, argv); // ros::init_options::AnonymousName);
     rclcpp::Node::SharedPtr nh = rclcpp::Node::make_shared("loop_fusion");
   
     CommandLineConfig app_params;
     std::shared_ptr<App> app = std::make_shared<App>(nh, app_params);
- 
     posegraph.registerPub(nh);
     
     VISUALIZATION_SHIFT_X = 0;
@@ -553,9 +546,10 @@ int main(int argc, char **argv)
     SKIP_DIS = 0;
 
    
-    string config_file;
+    string config_file, vocabulary_file, brief_pattern_file;
     getParamOrExit(nh, "config_file", config_file);
-    std::cerr << "config_file: " << config_file << std::endl;
+    getParamOrExit(nh, "vocabulary_file", vocabulary_file);
+    getParamOrExit(nh, "brief_pattern_file", brief_pattern_file);
     
     cv::FileStorage fsSettings(config_file, cv::FileStorage::READ);
     if(!fsSettings.isOpened())
@@ -566,15 +560,9 @@ int main(int argc, char **argv)
     cameraposevisual.setScale(0.1);
     cameraposevisual.setLineWidth(0.01);
 
-    std::string vocabulary_file, brief_pattern_file;
-    getParamOrExit(nh, "vocabulary_file", vocabulary_file);
-    getParamOrExit(nh, "brief_pattern_file", brief_pattern_file);
-    std::cerr << "vocabulary_file: " << vocabulary_file << std::endl;
-    std::cerr << "brief_pattern_file: " << brief_pattern_file << std::endl;
     BRIEF_PATTERN_FILE = brief_pattern_file;
 
     posegraph.loadVocabulary(vocabulary_file);
-
 
     //ROW = fsSettings["image_height"];
     //COL = fsSettings["image_width"];
@@ -650,10 +638,6 @@ int main(int argc, char **argv)
     auto sub_intrinsics = nh->create_subscription<sensor_msgs::msg::CameraInfo>("/vins_estimator/intrinsics", 2000, std::bind(&App::intrinsics_callback, app.get(), std::placeholders::_1));
     auto sub_point = nh->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/keyframe_point", 2000, std::bind(&App::point_callback, app.get(), std::placeholders::_1));
     auto sub_margin_point = nh->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/margin_cloud", 2000, std::bind(&App::margin_point_callback, app.get(), std::placeholders::_1));
-
-    /* 
-    pub_camera_pose_visual = n.advertise<visualization_msgs::MarkerArray>("camera_pose_visual", 1000);
-    */
 
     std::thread measurement_process;
     std::thread keyboard_command_process;

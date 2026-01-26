@@ -204,8 +204,8 @@ void CameraPoseVisualization::reset() {
     //image.colors.clear();
 }
 
-/* ROS2HACK
-void CameraPoseVisualization::publish_by( ros::Publisher &pub, const std_msgs::msg::Header &header ) {
+void CameraPoseVisualization::publish_by( const rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr & pub, const std_msgs::msg::Header &header ) {    
+
 	visualization_msgs::msg::MarkerArray markerArray_msg;
 	//int k = (int)m_markers.size();
   //for (int i = 0; i < 5 && k > 0; i++)
@@ -221,16 +221,15 @@ void CameraPoseVisualization::publish_by( ros::Publisher &pub, const std_msgs::m
 		markerArray_msg.markers.push_back(marker);
 	}
   
-	pub.publish(markerArray_msg);
-}*/
+	pub->publish(markerArray_msg);
 
-/* ROS2HACK
-void CameraPoseVisualization::publish_image_by( ros::Publisher &pub, const std_msgs::msg::Header &header ) {
+}
+
+void CameraPoseVisualization::publish_image_by( const rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr & pub, const std_msgs::msg::Header &header ) {
     image.header = header;
 
-    pub.publish(image);
+    pub->publish(image);
 }
-*/
 /*
 void CameraPoseVisualization::add_image(const Eigen::Vector3d& T, const Eigen::Matrix3d& R, const cv::Mat &src)
 {

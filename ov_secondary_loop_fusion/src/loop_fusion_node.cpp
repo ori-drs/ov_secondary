@@ -44,12 +44,12 @@
 App::App(rclcpp::Node::SharedPtr node, const CommandLineConfig &app_params):
     node_(node), app_params_(app_params) {
 
-    pub_match_img = node_->create_publisher<sensor_msgs::msg::Image>("/match_image", 1000);
-    pub_camera_pose_visual = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/camera_pose_visual", 1000);
-    pub_point_cloud = node_->create_publisher<sensor_msgs::msg::PointCloud>("/point_cloud_loop_rect", 1000);
-    pub_margin_cloud = node_->create_publisher<sensor_msgs::msg::PointCloud>("/margin_cloud_loop_rect", 1000);
-    pub_odometry_rect = node_->create_publisher<nav_msgs::msg::Odometry>("/odometry_rect", 1000);
-    pub_pose_rect = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/pose_rect", 1000);
+    pub_match_img = node_->create_publisher<sensor_msgs::msg::Image>("/ov_secondary/match_image", 1000);
+    pub_camera_pose_visual = node_->create_publisher<visualization_msgs::msg::MarkerArray>("/ov_secondary/camera_pose_visual", 1000);
+    pub_point_cloud = node_->create_publisher<sensor_msgs::msg::PointCloud>("/ov_secondary/point_cloud_loop_rect", 1000);
+    pub_margin_cloud = node_->create_publisher<sensor_msgs::msg::PointCloud>("/ov_secondary/margin_cloud_loop_rect", 1000);
+    pub_odometry_rect = node_->create_publisher<nav_msgs::msg::Odometry>("/ov_secondary/odometry_rect", 1000);
+    pub_pose_rect = node_->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("/ov_secondary/pose_rect", 1000);
 }
 
 

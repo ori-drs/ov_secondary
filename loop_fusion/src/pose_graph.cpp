@@ -14,6 +14,117 @@
 #include <cmath>
 #include <rclcpp/time.hpp>
 
+
+namespace {
+
+struct TrajectoryEntry
+{
+    double timestamp;
+    Eigen::Vector3d position;
+    Eigen::Quaterniond orientation;
+};
+
+std::string FormatTimestampForFilename(double timestamp)
+{
+    std::ostringstream ss;
+    ss.setf(std::ios::fixed, std::ios::floatfield);
+    ss << std::setprecision(6) << timestamp;
+    return ss.str();
+}
+
+std::string JoinPath(const std::string &folder, const std::string &filename)
+{
+    if (folder.empty())
+        return filename;
+    if (folder.back() == '/')
+        return folder + filename;
+    return folder + "/" + filename;
+}
+
+void WriteTumTrajectory(const std::vector<TrajectoryEntry> &entries, const std::string &path)
+{
+    std::ofstream file(path, std::ios::out);
+    if (!file.is_open())
+    {
+        printf("[POSEGRAPH]: failed to open trajectory file: %s\n", path.c_str());
+        return;
+    }
+
+    file.setf(std::ios::fixed, std::ios::floatfield);
+    file.precision(6);
+    for (const auto &entry : entries)
+    {
+        file << entry.timestamp << " "
+             << entry.position.x() << " "
+             << entry.position.y() << " "
+             << entry.position.z() << " "
+             << entry.orientation.x() << " "
+             << entry.orientation.y() << " "
+             << entry.orientation.z() << " "
+             << entry.orientation.w() << "\n";
+    }
+    file.close();
+}
+
+void SaveTrajectorySnapshot(std::list<KeyFrame*> &keyframes, std::mutex &keyframes_mutex,
+                            const std::string &result_folder)
+{
+    // printf("[SAVE]: save trajectory before optimization \n");
+    std::vector<TrajectoryEntry> entries;
+    double last_timestamp = 0.0;
+
+    keyframes_mutex.lock();
+    if (!keyframes.empty())
+    {
+        last_timestamp = keyframes.back()->time_stamp;
+        entries.reserve(keyframes.size());
+        for (auto it = keyframes.begin(); it != keyframes.end(); ++it)
+        {
+            Vector3d P;
+            Matrix3d R;
+            (*it)->getPose(P, R);
+            if (SAVE_CAM_POSES)
+            {
+                P = P + R * tic;
+                R = R * qic;
+            }
+            Quaterniond Q{R};
+            entries.push_back({(*it)->time_stamp, P, Q});
+        }
+    }
+    keyframes_mutex.unlock();
+
+    if (entries.empty())
+        return;
+
+    std::string filename = FormatTimestampForFilename(last_timestamp) + ".txt";
+    std::string path = JoinPath(result_folder, filename);
+    WriteTumTrajectory(entries, path);
+}
+
+void AppendLoopDetection(const KeyFrame *cur_kf, const KeyFrame *matched_kf)
+{
+    if (!cur_kf || !matched_kf)
+        return;
+    if (VINS_RESULT_FOLDER.empty())
+        return;
+
+    std::string path = JoinPath(LOOP_RESULT_FOLDER, "ov_loops.txt");
+    std::ofstream file(path, std::ios::app);
+    if (!file.is_open())
+    {
+        printf("[POSEGRAPH]: failed to open loop log file: %s\n", path.c_str());
+        return;
+    }
+
+    file.setf(std::ios::fixed, std::ios::floatfield);
+    file.precision(6);
+    file << cur_kf->time_stamp << " " << matched_kf->time_stamp << "\n";
+    file.close();
+}
+
+}  // namespace
+
 PoseGraph::PoseGraph()
 {
     posegraph_visualization = new CameraPoseVisualization(1.0, 0.0, 1.0, 1.0);
@@ -105,6 +216,7 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
 	{
         printf("[POSEGRAPH]:  %d detect loop with %d \n", cur_kf->index, loop_index);
         KeyFrame* old_kf = getKeyFrame(loop_index);
+        AppendLoopDetection(cur_kf, old_kf);
 
         if ((cur_kf->has_loop && loop_index == old_kf->index) || cur_kf->findConnection(old_kf))
         {
@@ -184,21 +296,44 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     path[sequence_cnt].poses.push_back(pose_stamped);
     path[sequence_cnt].header = pose_stamped.header;
 
+    // if (SAVE_LOOP_PATH)
+    // {
+    //     ofstream loop_path_file(VINS_RESULT_PATH, ios::app);
+    //     loop_path_file.setf(ios::fixed, ios::floatfield);
+    //     loop_path_file.precision(0);
+    //     loop_path_file << cur_kf->time_stamp * 1e9 << ",";
+    //     loop_path_file.precision(5);
+    //     loop_path_file  << P.x() << ","
+    //           << P.y() << ","
+    //           << P.z() << ","
+    //           << Q.w() << ","
+    //           << Q.x() << ","
+    //           << Q.y() << ","
+    //           << Q.z() << ","
+    //           << endl;
+    //     loop_path_file.close();
+    // }
     if (SAVE_LOOP_PATH)
     {
         ofstream loop_path_file(VINS_RESULT_PATH, ios::app);
         loop_path_file.setf(ios::fixed, ios::floatfield);
-        loop_path_file.precision(0);
-        loop_path_file << cur_kf->time_stamp * 1e9 << ",";
-        loop_path_file.precision(5);
-        loop_path_file  << P.x() << ","
-              << P.y() << ","
-              << P.z() << ","
-              << Q.w() << ","
-              << Q.x() << ","
-              << Q.y() << ","
-              << Q.z() << ","
-              << endl;
+
+        // Timestamp in seconds (TUM format)
+        loop_path_file.precision(6);
+        loop_path_file << cur_kf->time_stamp << " ";
+
+        // Translation (meters)
+        loop_path_file.precision(6);
+        loop_path_file << P.x() << " "
+                       << P.y() << " "
+                       << P.z() << " ";
+
+        // Quaternion in TUM order: qx qy qz qw
+        loop_path_file << Q.x() << " "
+                       << Q.y() << " "
+                       << Q.z() << " "
+                       << Q.w() << std::endl;
+
         loop_path_file.close();
     }
     //draw local connection
@@ -243,6 +378,8 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
 	keyframelist.push_back(cur_kf);
     publish();
 	m_keyframelist.unlock();
+
+    SaveTrajectorySnapshot(keyframelist, m_keyframelist, VINS_ALL_TRAJ_FOLDER);
 }
 
 void PoseGraph::loadKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
@@ -260,6 +397,8 @@ void PoseGraph::loadKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     {
         printf("[POSEGRAPH]:  %d detect loop with %d \n", cur_kf->index, loop_index);
         KeyFrame* old_kf = getKeyFrame(loop_index);
+        AppendLoopDetection(cur_kf, old_kf);
+
         if (cur_kf->findConnection(old_kf))
         {
             if (earliest_loop_index > loop_index || earliest_loop_index == -1)
@@ -470,6 +609,7 @@ void PoseGraph::optimize4DoF()
 {
     while(true)
     {
+        bool optimized = false;
         int cur_index = -1;
         int first_looped_index = -1;
         m_optimize_buf.lock();
@@ -482,6 +622,7 @@ void PoseGraph::optimize4DoF()
         m_optimize_buf.unlock();
         if (cur_index != -1)
         {
+            SaveTrajectorySnapshot(keyframelist, m_keyframelist, VINS_RESULT_FOLDER);
             printf("[POSEGRAPH]: optimize pose graph \n");
             TicToc tmp_t1;
             m_keyframelist.lock();
@@ -645,12 +786,18 @@ void PoseGraph::optimize4DoF()
 
             // Nice debug print
             printf("[POSEGRAPH]: creation %.3f ms | optimization %.3f ms | update %.3f ms | %.3f dyaw, %.3f dpos\n", t_create, t_opt, t_update, yaw_drift, t_drift.norm());
-
-
+            optimized = true;
         }
 
-        std::chrono::milliseconds dura(2000);
-        std::this_thread::sleep_for(dura);
+        if (optimized && MIN_OPTIMIZATION_TIME_DIFF > 0.0)
+        {
+            auto interval = std::chrono::duration<double>(MIN_OPTIMIZATION_TIME_DIFF);
+            std::this_thread::sleep_for(interval);
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
     }
     return;
 }
@@ -659,6 +806,7 @@ void PoseGraph::optimize6DoF()
 {
     while(true)
     {
+        bool optimized = false;
         int cur_index = -1;
         int first_looped_index = -1;
         m_optimize_buf.lock();
@@ -671,6 +819,7 @@ void PoseGraph::optimize6DoF()
         m_optimize_buf.unlock();
         if (cur_index != -1)
         {
+            SaveTrajectorySnapshot(keyframelist, m_keyframelist, VINS_RESULT_FOLDER);
             printf("[POSEGRAPH]: optimize pose graph \n");
             TicToc tmp_t;
             m_keyframelist.lock();
@@ -819,11 +968,18 @@ void PoseGraph::optimize6DoF()
 
             // Nice debug print
             printf("[POSEGRAPH]: pose optimization in %.3f seconds | %.3f dori, %.3f dpos\n", tmp_t.toc(), Utility::R2ypr(r_drift).norm(), t_drift.norm());
-
+            optimized = true;
         }
 
-        std::chrono::milliseconds dura(2000);
-        std::this_thread::sleep_for(dura);
+        if (optimized && MIN_OPTIMIZATION_TIME_DIFF > 0.0)
+        {
+            auto interval = std::chrono::duration<double>(MIN_OPTIMIZATION_TIME_DIFF);
+            std::this_thread::sleep_for(interval);
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
     }
     return;
 }
@@ -877,21 +1033,44 @@ void PoseGraph::updatePath()
             path[(*it)->sequence].header = pose_stamped.header;
         }
 
+        // if (SAVE_LOOP_PATH)
+        // {
+        //     ofstream loop_path_file(VINS_RESULT_PATH, ios::app);
+        //     loop_path_file.setf(ios::fixed, ios::floatfield);
+        //     loop_path_file.precision(0);
+        //     loop_path_file << (*it)->time_stamp * 1e9 << ",";
+        //     loop_path_file.precision(5);
+        //     loop_path_file  << P.x() << ","
+        //           << P.y() << ","
+        //           << P.z() << ","
+        //           << Q.w() << ","
+        //           << Q.x() << ","
+        //           << Q.y() << ","
+        //           << Q.z() << ","
+        //           << endl;
+        //     loop_path_file.close();
+        // }
         if (SAVE_LOOP_PATH)
         {
             ofstream loop_path_file(VINS_RESULT_PATH, ios::app);
             loop_path_file.setf(ios::fixed, ios::floatfield);
-            loop_path_file.precision(0);
-            loop_path_file << (*it)->time_stamp * 1e9 << ",";
-            loop_path_file.precision(5);
-            loop_path_file  << P.x() << ","
-                  << P.y() << ","
-                  << P.z() << ","
-                  << Q.w() << ","
-                  << Q.x() << ","
-                  << Q.y() << ","
-                  << Q.z() << ","
-                  << endl;
+
+            // Timestamp in seconds
+            loop_path_file.precision(6);
+            loop_path_file << (*it)->time_stamp << " ";
+
+            // Translation (meters)
+            loop_path_file.precision(6);
+            loop_path_file << P.x() << " "
+                           << P.y() << " "
+                           << P.z() << " ";
+
+            // Quaternion (qx qy qz qw) — TUM order
+            loop_path_file << Q.x() << " "
+                           << Q.y() << " "
+                           << Q.z() << " "
+                           << Q.w() << std::endl;
+
             loop_path_file.close();
         }
         //draw local connection
@@ -1005,7 +1184,7 @@ void PoseGraph::loadPoseGraph()
 {
     TicToc tmp_t;
     FILE * pFile;
-    string file_path = POSE_GRAPH_SAVE_PATH + "pose_graph.txt";
+    string file_path = POSE_GRAPH_LOAD_PATH + "pose_graph.txt";
     printf("[POSEGRAPH]: lode pose graph from: %s \n", file_path.c_str());
     printf("[POSEGRAPH]: pose graph loading...\n");
     pFile = fopen (file_path.c_str(),"r");
@@ -1051,7 +1230,7 @@ void PoseGraph::loadPoseGraph()
         std::string image_path, descriptor_path;
         if (DEBUG_IMAGE)
         {
-            image_path = POSE_GRAPH_SAVE_PATH + to_string(index) + "_image.png";
+            image_path = POSE_GRAPH_LOAD_PATH + to_string(index) + "_image.png";
             image = cv::imread(image_path.c_str(), 0);
         }
 
@@ -1080,9 +1259,9 @@ void PoseGraph::loadPoseGraph()
             }
 
         // load keypoints, brief_descriptors   
-        string brief_path = POSE_GRAPH_SAVE_PATH + to_string(index) + "_briefdes.dat";
+        string brief_path = POSE_GRAPH_LOAD_PATH + to_string(index) + "_briefdes.dat";
         std::ifstream brief_file(brief_path, std::ios::binary);
-        string keypoints_path = POSE_GRAPH_SAVE_PATH + to_string(index) + "_keypoints.txt";
+        string keypoints_path = POSE_GRAPH_LOAD_PATH + to_string(index) + "_keypoints.txt";
         FILE *keypoints_file;
         keypoints_file = fopen(keypoints_path.c_str(), "r");
         vector<cv::KeyPoint> keypoints;

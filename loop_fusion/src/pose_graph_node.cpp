@@ -12,6 +12,7 @@
 #include <vector>
 #include <rclcpp/node.hpp>
 #include <rclcpp/time.hpp>
+#include <rclcpp/wait_for_message.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
@@ -22,6 +23,7 @@
 #include <visualization_msgs/msg/marker.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <cv_bridge/cv_bridge.hpp>
+#include <filesystem>
 #include <iostream>
 //#include <ros/package.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -77,6 +79,8 @@ int RECALL_IGNORE_RECENT_COUNT = 50;
 double MAX_THETA_DIFF = 30.0;
 double MAX_POS_DIFF = 20.0;
 int MIN_LOOP_NUM = 25;
+bool SAVE_CAM_POSES;
+double MIN_OPTIMIZATION_TIME_DIFF;
 const double TIMESTAMP_SYNC_TOLERANCE = 0.000001; // seconds
 
 int VISUALIZATION_SHIFT_X;
@@ -92,6 +96,10 @@ Eigen::Matrix3d qic;
 
 std::string BRIEF_PATTERN_FILE;
 std::string POSE_GRAPH_SAVE_PATH;
+std::string POSE_GRAPH_LOAD_PATH;
+std::string LOOP_RESULT_FOLDER;
+std::string VINS_ALL_TRAJ_FOLDER;
+std::string VINS_RESULT_FOLDER;
 std::string VINS_RESULT_PATH;
 CameraPoseVisualization cameraposevisual(1, 0, 0, 1);
 Eigen::Vector3d last_t(-100, -100, -100);
@@ -122,6 +130,51 @@ void new_sequence()
     while(!odometry_buf.empty())
         odometry_buf.pop();
     m_buf.unlock();
+}
+
+bool App::ensure_dir(const std::string& path)
+{
+    try
+    {
+        if (std::filesystem::exists(path))
+            return std::filesystem::is_directory(path);
+
+        return std::filesystem::create_directories(path);
+    }
+    catch (const std::filesystem::filesystem_error& e)
+    {
+        std::cerr << "Failed to create directory: "
+                  << path << "\n"
+                  << e.what() << std::endl;
+        return false;
+    }
+}
+
+void App::delete_files(const std::string& path)
+{
+    try
+    {
+        if (!std::filesystem::exists(path) || !std::filesystem::is_directory(path))
+            return;
+
+        for (const auto& entry : std::filesystem::directory_iterator(path))
+        {
+            if (std::filesystem::is_directory(entry.status()))
+            {
+                delete_files(entry.path().string());
+            }
+            else if (std::filesystem::is_regular_file(entry.status()))
+            {
+                std::filesystem::remove(entry.path());
+            }
+            // symlinks / others are ignored
+        }
+    }
+    catch (const std::filesystem::filesystem_error& e)
+    {
+        std::cerr << "Filesystem error: "
+                  << e.what() << std::endl;
+    }
 }
 
 void App::image_callback(const sensor_msgs::msg::Image::SharedPtr image_msg)
@@ -259,7 +312,6 @@ void App::vio_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
 
 }
 
-
 void App::vio_callback_pose(const geometry_msgs::msg::PoseWithCovarianceStamped::SharedPtr pose_msg)
 {
     //ROS_INFO("vio_callback!");
@@ -313,7 +365,6 @@ void App::extrinsic_callback(const nav_msgs::msg::Odometry::SharedPtr pose_msg)
                       pose_msg->pose.pose.orientation.z).toRotationMatrix();
     m_process.unlock();
 }
-
 
 void App::intrinsics_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
 {
@@ -543,7 +594,6 @@ void getParamOrExit(rclcpp::Node::SharedPtr nh, const std::string &param_field, 
   std::cout << param_field << ": " << variable <<" (string)\n";
 }
 
-
 int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv); // ros::init_options::AnonymousName);
@@ -588,9 +638,14 @@ int main(int argc, char **argv)
     //m_camera = camodocal::CameraFactory::instance()->generateCameraFromYamlFile(cam0Path.c_str());
 
 
-    fsSettings["pose_graph_save_path"] >> POSE_GRAPH_SAVE_PATH;
-    fsSettings["output_path"] >> VINS_RESULT_PATH;
+    fsSettings["output_path"] >> VINS_RESULT_FOLDER;
+    VINS_RESULT_PATH = VINS_RESULT_FOLDER + "/ov_secondary.txt";
+    VINS_ALL_TRAJ_FOLDER = VINS_RESULT_FOLDER + "/all_traj/";
+    LOOP_RESULT_FOLDER = VINS_RESULT_FOLDER + "/loops/";
+    POSE_GRAPH_SAVE_PATH = VINS_RESULT_FOLDER + "/pose_graph/";
+    fsSettings["pose_graph_load_path"] >> POSE_GRAPH_LOAD_PATH;
     fsSettings["save_image"] >> DEBUG_IMAGE;
+    fsSettings["save_cam_poses"] >> SAVE_CAM_POSES;
     fsSettings["skip_dist"] >> SKIP_DIS;
     fsSettings["skip_cnt"] >> SKIP_CNT;
     fsSettings["min_score"] >> MIN_SCORE;
@@ -599,12 +654,28 @@ int main(int argc, char **argv)
     fsSettings["max_theta_diff"] >> MAX_THETA_DIFF;
     fsSettings["max_pos_diff"] >> MAX_POS_DIFF;
     fsSettings["min_loop_feat_num"] >> MIN_LOOP_NUM;
+    fsSettings["min_optimization_time_diff"] >> MIN_OPTIMIZATION_TIME_DIFF;
+
+    if (!std::filesystem::exists(VINS_RESULT_FOLDER) || !std::filesystem::is_directory(VINS_RESULT_FOLDER))
+    {
+        throw std::runtime_error(
+            "VINS_RESULT_FOLDER does not exist or is not a directory: " +
+            VINS_RESULT_FOLDER);
+    }
+
+    app->ensure_dir(VINS_ALL_TRAJ_FOLDER);
+    app->ensure_dir(LOOP_RESULT_FOLDER);
+    app->ensure_dir(POSE_GRAPH_SAVE_PATH);
+
+    app->delete_files(VINS_RESULT_FOLDER);
 
     int LOAD_PREVIOUS_POSE_GRAPH;
     LOAD_PREVIOUS_POSE_GRAPH = fsSettings["load_previous_pose_graph"];
-    VINS_RESULT_PATH = VINS_RESULT_PATH + "/vio_loop.csv";
+
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
     fout.close();
+    std::ofstream loops_out(LOOP_RESULT_FOLDER + "/ov_loops.txt", std::ios::out);
+    loops_out.close();
 
     int USE_IMU = fsSettings["imu"];
     posegraph.setIMUFlag(USE_IMU);
@@ -641,6 +712,23 @@ int main(int argc, char **argv)
     std::cout << qic.transpose() << std::endl;
     std::cout << tic.transpose() << std::endl;
     */
+
+    // Get camera information
+    printf("[POSEGRAPH]: waiting for camera info topic...\n");
+    sensor_msgs::msg::CameraInfo msg1;
+    rclcpp::wait_for_message(msg1, nh, "/ov_msckf/loop_intrinsics");
+    app->intrinsics_callback(std::make_shared<sensor_msgs::msg::CameraInfo>(msg1));
+    printf("[POSEGRAPH]: received camera info message!\n");
+    std::cout << m_camera.get()->parametersToString() << std::endl;
+
+    // Get camera to imu information
+    printf("[POSEGRAPH]: waiting for camera to imu extrinsics topic...\n");
+    nav_msgs::msg::Odometry msg2;
+    rclcpp::wait_for_message(msg2, nh, "/ov_msckf/loop_extrinsic");
+    app->extrinsic_callback(std::make_shared<nav_msgs::msg::Odometry>(msg2));
+    printf("[POSEGRAPH]: received camera to imu extrinsics message!\n");
+    std::cout << qic.transpose() << std::endl;
+    std::cout << tic.transpose() << std::endl;
 
     // Setup the rest of the publishers
     // auto sub_vio1 = nh->create_subscription<nav_msgs::msg::Odometry>("/vins_estimator/odometry", 2000, std::bind(&App::vio_callback, app.get(), std::placeholders::_1));

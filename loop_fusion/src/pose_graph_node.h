@@ -30,6 +30,8 @@ public:
     void point_callback(const sensor_msgs::msg::PointCloud::SharedPtr point_msg);
     void margin_point_callback(const sensor_msgs::msg::PointCloud::SharedPtr point_msg);
 
+    bool ensure_dir(const std::string& path);
+    void delete_files(const std::string& path);
 
 
 private:

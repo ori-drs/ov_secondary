@@ -11,6 +11,7 @@
 
 #include <vector>
 #include <rclcpp/node.hpp>
+#include <rclcpp/time.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
@@ -63,6 +64,7 @@ std::mutex m_process;
 int frame_index  = 0;
 int sequence = 1;
 PoseGraph posegraph;
+rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_match_img;
 int skip_first_cnt = 0;
 int SKIP_CNT;
 int skip_cnt = 0;
@@ -75,6 +77,7 @@ int RECALL_IGNORE_RECENT_COUNT = 50;
 double MAX_THETA_DIFF = 30.0;
 double MAX_POS_DIFF = 20.0;
 int MIN_LOOP_NUM = 25;
+const double TIMESTAMP_SYNC_TOLERANCE = 0.000001; // seconds
 
 int VISUALIZATION_SHIFT_X;
 int VISUALIZATION_SHIFT_Y;
@@ -104,7 +107,8 @@ void new_sequence()
     {
         //ROS_WARN("only support 5 sequences since it's boring to copy code for more sequences.");
         //ROS_BREAK();
-        // ROS2HACK - this is important problem
+        RCLCPP_WARN(rclcpp::get_logger("loop_fusion"),
+                    "Only support 5 sequences; extra sequences will be ignored.");
     }
     posegraph.posegraph_visualization->reset();
     posegraph.publish();
@@ -129,16 +133,15 @@ void App::image_callback(const sensor_msgs::msg::Image::SharedPtr image_msg)
     //printf("[POSEGRAPH]:  image time %f \n", image_msg->header.stamp.toSec());
 
     // detect unstable camera stream
-    /* // ROS2HACK
-    if (last_image_time == -1)
-        last_image_time = 0;// ROS2HACK image_msg->header.stamp.toSec();
-    else if (image_msg->header.stamp.toSec() - last_image_time > 1.0 || image_msg->header.stamp.toSec() < last_image_time)
+    const double image_time = rclcpp::Time(image_msg->header.stamp).seconds();
+    if (last_image_time < 0.0)
+        last_image_time = image_time;
+    else if (image_time - last_image_time > 1.0 || image_time < last_image_time)
     {
         //ROS_WARN("image discontinue! detect a new sequence!");
         new_sequence();
     }
-    last_image_time = image_msg->header.stamp.toSec();
-    */
+    last_image_time = image_time;
 }
 
 void App::point_callback(const sensor_msgs::msg::PointCloud::SharedPtr point_msg)
@@ -354,43 +357,54 @@ void process()
 {
     while (true)
     {
-        sensor_msgs::msg::Image::SharedPtr image_msg = NULL;
-        sensor_msgs::msg::PointCloud::SharedPtr point_msg = NULL;
-        nav_msgs::msg::Odometry::SharedPtr pose_msg = NULL;
+        sensor_msgs::msg::Image::ConstSharedPtr image_msg = NULL;
+        sensor_msgs::msg::PointCloud::ConstSharedPtr point_msg = NULL;
+        nav_msgs::msg::Odometry::ConstSharedPtr pose_msg = NULL;
+
+        auto stamp_seconds = [](const rclcpp::Time &t) { return t.seconds(); };
 
         // find out the messages with same time stamp
         m_buf.lock();
         if(!image_buf.empty() && !point_buf.empty() && !pose_buf.empty())
         {
-            /* ROS2HACK
-            if (image_buf.front()->header.stamp.toSec() > pose_buf.front()->header.stamp.toSec())
+            const double image_front_time = stamp_seconds(rclcpp::Time(image_buf.front()->header.stamp));
+            const double pose_front_time  = stamp_seconds(rclcpp::Time(pose_buf.front()->header.stamp));
+            const double point_front_time = stamp_seconds(rclcpp::Time(point_buf.front()->header.stamp));
+
+            if (image_front_time - pose_front_time > TIMESTAMP_SYNC_TOLERANCE)
             {
                 pose_buf.pop();
-                printf("[POSEGRAPH]: throw pose at beginning\n");
+                printf("[POSEGRAPH]: throw pose at beginning | image: %.9f  pose: %.9f\n", image_front_time, pose_front_time);
             }
-            else if (image_buf.front()->header.stamp.toSec() > point_buf.front()->header.stamp.toSec())
+            else if (image_front_time - point_front_time > TIMESTAMP_SYNC_TOLERANCE)
             {
                 point_buf.pop();
-                printf("[POSEGRAPH]: throw point at beginning\n");
+                printf("[POSEGRAPH]: throw point at beginning | image: %.9f  point: %.9f\n", image_front_time, point_front_time);
             }
-            else if (image_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec() 
-                && point_buf.back()->header.stamp.toSec() >= pose_buf.front()->header.stamp.toSec())
+            else if (stamp_seconds(rclcpp::Time(image_buf.back()->header.stamp)) + TIMESTAMP_SYNC_TOLERANCE >= pose_front_time
+                     && stamp_seconds(rclcpp::Time(point_buf.back()->header.stamp)) + TIMESTAMP_SYNC_TOLERANCE >= pose_front_time)
             {
+                // printf("[POSEGRAPH]: sync ok | image(front/back): %.9f/%.9f  point(front/back): %.9f/%.9f  pose(front): %.9f  tol: %.3fms\n",
+                //        image_front_time,
+                //        stamp_seconds(rclcpp::Time(image_buf.back()->header.stamp)),
+                //        point_front_time,
+                //        stamp_seconds(rclcpp::Time(point_buf.back()->header.stamp)),
+                //        pose_front_time,
+                //        TIMESTAMP_SYNC_TOLERANCE * 1000.0);
                 pose_msg = pose_buf.front();
                 pose_buf.pop();
                 while (!pose_buf.empty())
                     pose_buf.pop();
-                while (image_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
+                while (stamp_seconds(rclcpp::Time(image_buf.front()->header.stamp)) + TIMESTAMP_SYNC_TOLERANCE < pose_front_time)
                     image_buf.pop();
                 image_msg = image_buf.front();
                 image_buf.pop();
 
-                while (point_buf.front()->header.stamp.toSec() < pose_msg->header.stamp.toSec())
+                while (stamp_seconds(rclcpp::Time(point_buf.front()->header.stamp)) + TIMESTAMP_SYNC_TOLERANCE < pose_front_time)
                     point_buf.pop();
                 point_msg = point_buf.front();
                 point_buf.pop();
             }
-            */
         }
         m_buf.unlock();
 
@@ -472,13 +486,12 @@ void process()
                     //printf("[POSEGRAPH]: u %f, v %f \n", p_2d_uv.x, p_2d_uv.y);
                 }
 
-                // ROS2HACK
-                //KeyFrame* keyframe = new KeyFrame(pose_msg->header.stamp.toSec(), frame_index, T, R, image,
-                //                   point_3d, point_2d_uv, point_2d_normal, point_id, sequence);   
+                const double pose_time = rclcpp::Time(pose_msg->header.stamp).seconds();
+                KeyFrame* keyframe = new KeyFrame(pose_time, frame_index, T, R, image,
+                                   point_3d, point_2d_uv, point_2d_normal, point_id, sequence);
                 m_process.lock();
                 start_flag = 1;
-                // ROS2HACK
-                //posegraph.addKeyFrame(keyframe, 1);
+                posegraph.addKeyFrame(keyframe, 1);
                 m_process.unlock();
                 frame_index++;
                 last_t = T;
@@ -501,7 +514,7 @@ void command()
             m_process.unlock();
             printf("[POSEGRAPH]: save pose graph finish\nyou can set 'load_previous_pose_graph' to 1 in the config file to reuse it next time\n");
             printf("[POSEGRAPH]: program shutting down...\n");
-            //ROS2HACK ros::shutdown();
+            rclcpp::shutdown();
         }
         if (c == 'n')
             new_sequence();

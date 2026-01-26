@@ -10,6 +10,9 @@
  *******************************************************/
 
 #include "pose_graph.h"
+#include <cmath>
+#include <cmath>
+#include <rclcpp/time.hpp>
 
 PoseGraph::PoseGraph()
 {
@@ -100,7 +103,7 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     }
 	if (loop_index != -1)
 	{
-        //printf("[POSEGRAPH]:  %d detect loop with %d \n", cur_kf->index, loop_index);
+        printf("[POSEGRAPH]:  %d detect loop with %d \n", cur_kf->index, loop_index);
         KeyFrame* old_kf = getKeyFrame(loop_index);
 
         if ((cur_kf->has_loop && loop_index == old_kf->index) || cur_kf->findConnection(old_kf))
@@ -167,7 +170,9 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     cur_kf->updatePose(P, R);
     Quaterniond Q{R};
     geometry_msgs::msg::PoseStamped pose_stamped;
-    //pose_stamped.header.stamp = ros::Time(cur_kf->time_stamp); // ROS2HACK
+    auto stamp_ns = static_cast<int64_t>(std::llround(cur_kf->time_stamp * 1e9));
+    pose_stamped.header.stamp.sec = static_cast<int32_t>(stamp_ns / 1000000000LL);
+    pose_stamped.header.stamp.nanosec = static_cast<uint32_t>(stamp_ns % 1000000000LL);
     pose_stamped.header.frame_id = "global";
     pose_stamped.pose.position.x = P.x() + VISUALIZATION_SHIFT_X;
     pose_stamped.pose.position.y = P.y() + VISUALIZATION_SHIFT_Y;
@@ -240,7 +245,6 @@ void PoseGraph::addKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
 	m_keyframelist.unlock();
 }
 
-
 void PoseGraph::loadKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
 {
     cur_kf->index = global_index;
@@ -271,7 +275,9 @@ void PoseGraph::loadKeyFrame(KeyFrame* cur_kf, bool flag_detect_loop)
     cur_kf->getPose(P, R);
     Quaterniond Q{R};
     geometry_msgs::msg::PoseStamped pose_stamped;
-    // ROS2HACK pose_stamped.header.stamp = ros::Time(cur_kf->time_stamp);
+    auto stamp_ns = static_cast<int64_t>(std::llround(cur_kf->time_stamp * 1e9));
+    pose_stamped.header.stamp.sec = static_cast<int32_t>(stamp_ns / 1000000000LL);
+    pose_stamped.header.stamp.nanosec = static_cast<uint32_t>(stamp_ns % 1000000000LL);
     pose_stamped.header.frame_id = "global";
     pose_stamped.pose.position.x = P.x() + VISUALIZATION_SHIFT_X;
     pose_stamped.pose.position.y = P.y() + VISUALIZATION_SHIFT_Y;
@@ -443,8 +449,6 @@ int PoseGraph::detectLoop(KeyFrame* keyframe, int frame_index)
 
     // failure
     return -1;
-
-
 }
 
 void PoseGraph::addKeyFrameIntoVoc(KeyFrame* keyframe)
@@ -478,7 +482,7 @@ void PoseGraph::optimize4DoF()
         m_optimize_buf.unlock();
         if (cur_index != -1)
         {
-            //printf("[POSEGRAPH]: optimize pose graph \n");
+            printf("[POSEGRAPH]: optimize pose graph \n");
             TicToc tmp_t1;
             m_keyframelist.lock();
             KeyFrame* cur_kf = getKeyFrame(cur_index);
@@ -651,7 +655,6 @@ void PoseGraph::optimize4DoF()
     return;
 }
 
-
 void PoseGraph::optimize6DoF()
 {
     while(true)
@@ -668,7 +671,7 @@ void PoseGraph::optimize6DoF()
         m_optimize_buf.unlock();
         if (cur_index != -1)
         {
-            //printf("[POSEGRAPH]: optimize pose graph \n");
+            printf("[POSEGRAPH]: optimize pose graph \n");
             TicToc tmp_t;
             m_keyframelist.lock();
             KeyFrame* cur_kf = getKeyFrame(cur_index);
@@ -852,7 +855,9 @@ void PoseGraph::updatePath()
 //        printf("[POSEGRAPH]: path p: %f, %f, %f\n",  P.x(),  P.z(),  P.y() );
 
         geometry_msgs::msg::PoseStamped pose_stamped;
-        //ROS2HACK pose_stamped.header.stamp = ros::Time((*it)->time_stamp);
+        auto stamp_ns = static_cast<int64_t>(std::llround((*it)->time_stamp * 1e9));
+        pose_stamped.header.stamp.sec = static_cast<int32_t>(stamp_ns / 1000000000LL);
+        pose_stamped.header.stamp.nanosec = static_cast<uint32_t>(stamp_ns % 1000000000LL);
         pose_stamped.header.frame_id = "global";
         pose_stamped.pose.position.x = P.x() + VISUALIZATION_SHIFT_X;
         pose_stamped.pose.position.y = P.y() + VISUALIZATION_SHIFT_Y;
@@ -940,7 +945,6 @@ void PoseGraph::updatePath()
     m_keyframelist.unlock();
 }
 
-
 void PoseGraph::savePoseGraph()
 {
     m_keyframelist.lock();
@@ -996,6 +1000,7 @@ void PoseGraph::savePoseGraph()
     printf("[POSEGRAPH]: save pose graph time: %f s\n", tmp_t.toc() / 1000);
     m_keyframelist.unlock();
 }
+
 void PoseGraph::loadPoseGraph()
 {
     TicToc tmp_t;

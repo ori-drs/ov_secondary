@@ -10,6 +10,9 @@
  *******************************************************/
 
 #include "keyframe.h"
+#include <cmath>
+#include <cmath>
+#include <std_msgs/msg/header.hpp>
 
 template <typename Derived>
 static void reduceVector(vector<Derived> &v, vector<uchar> status)
@@ -501,10 +504,14 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 	            	*/
 	            	cv::Mat thumbimage;
 	            	cv::resize(loop_match_img, thumbimage, cv::Size(loop_match_img.cols / 2, loop_match_img.rows / 2));
-	            	// ROS2HACK
-	    	    	//sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", thumbimage).toImageMsg();
-	                //msg->header.stamp = ros::Time(time_stamp);
-	    	    	//pub_match_img.publish(msg);
+	            	if (pub_match_img)
+	            	{
+	    	    		auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", thumbimage).toImageMsg();
+	                    auto stamp_ns = static_cast<int64_t>(std::llround(time_stamp * 1e9));
+	                    msg->header.stamp.sec = static_cast<int32_t>(stamp_ns / 1000000000LL);
+	                    msg->header.stamp.nanosec = static_cast<uint32_t>(stamp_ns % 1000000000LL);
+	    	    		pub_match_img->publish(*msg);
+	            	}
 	            }
 	        }
 	    #endif
@@ -612,5 +619,3 @@ BriefExtractor::BriefExtractor(const std::string &pattern_file)
 
   m_brief.importPairs(x1, y1, x2, y2);
 }
-
-

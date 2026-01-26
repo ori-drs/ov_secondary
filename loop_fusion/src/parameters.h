@@ -31,7 +31,7 @@ extern double MAX_POS_DIFF;
 extern int MIN_LOOP_NUM;
 extern Eigen::Vector3d tic;
 extern Eigen::Matrix3d qic;
-// ROS2HACK extern ros::Publisher pub_match_img;
+extern rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_match_img;
 extern int VISUALIZATION_SHIFT_X;
 extern int VISUALIZATION_SHIFT_Y;
 extern std::string BRIEF_PATTERN_FILE;
@@ -40,5 +40,4 @@ extern int ROW;
 extern int COL;
 extern std::string VINS_RESULT_PATH;
 extern int DEBUG_IMAGE;
-
 

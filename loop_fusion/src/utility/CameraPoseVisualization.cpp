@@ -8,6 +8,7 @@
  *******************************************************/
 
 #include "CameraPoseVisualization.h"
+#include <rclcpp/duration.hpp>
 
 const Eigen::Vector3d CameraPoseVisualization::imlt = Eigen::Vector3d(-1.0, -0.5, 1.0);
 const Eigen::Vector3d CameraPoseVisualization::imrt = Eigen::Vector3d( 1.0, -0.5, 1.0);
@@ -92,7 +93,7 @@ void CameraPoseVisualization::add_loopedge(const Eigen::Vector3d& p0, const Eige
     //  tmp_loop_edge_num = 1;
     marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
     marker.action = visualization_msgs::msg::Marker::ADD;
-    //ROS2HACK marker.lifetime = ros::Duration();
+    marker.lifetime = rclcpp::Duration(0, 0);
     //marker.scale.x = 0.4;
     marker.scale.x = 0.02;
     marker.color.r = 1.0f;

@@ -104,6 +104,11 @@ std::string VINS_RESULT_PATH;
 CameraPoseVisualization cameraposevisual(1, 0, 0, 1);
 Eigen::Vector3d last_t(-100, -100, -100);
 double last_image_time = -1;
+double image_stream_start_time = -1;
+bool pose_graph_auto_saved = false;
+bool has_image_arrival = false;
+std::chrono::steady_clock::time_point last_image_arrival;
+rclcpp::TimerBase::SharedPtr image_inactive_timer;
 
 
 void new_sequence()
@@ -130,6 +135,8 @@ void new_sequence()
     while(!odometry_buf.empty())
         odometry_buf.pop();
     m_buf.unlock();
+    image_stream_start_time = -1;
+    pose_graph_auto_saved = false;
 }
 
 bool App::ensure_dir(const std::string& path)
@@ -195,6 +202,15 @@ void App::image_callback(const sensor_msgs::msg::Image::SharedPtr image_msg)
         new_sequence();
     }
     last_image_time = image_time;
+
+    if (image_stream_start_time < 0.0)
+        image_stream_start_time = image_time;
+
+    // Use wall time for inactivity checks to avoid ROS/sim time mismatches.
+    last_image_arrival = std::chrono::steady_clock::now();
+    has_image_arrival = true;
+    if (pose_graph_auto_saved)
+        pose_graph_auto_saved = false;
 }
 
 void App::point_callback(const sensor_msgs::msg::PointCloud::SharedPtr point_msg)
@@ -602,6 +618,36 @@ int main(int argc, char **argv)
     CommandLineConfig app_params;
     std::shared_ptr<App> app = std::make_shared<App>(nh, app_params);
     posegraph.registerPub(nh);
+
+    auto save_topic = nh->create_subscription<std_msgs::msg::Bool>(
+        "save_pose_graph",
+        10,
+        [](const std_msgs::msg::Bool::SharedPtr msg) {
+            if (!msg->data) {
+                return;
+            }
+            m_process.lock();
+            posegraph.savePoseGraph();
+            m_process.unlock();
+            printf("[POSEGRAPH]: save pose graph finish\n");
+        });
+
+    image_inactive_timer = nh->create_wall_timer(
+        std::chrono::milliseconds(200),
+        []() {
+            if (!has_image_arrival || pose_graph_auto_saved)
+                return;
+            const auto now = std::chrono::steady_clock::now();
+            const auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_image_arrival);
+            if (idle.count() >= 3000)
+            {
+                m_process.lock();
+                posegraph.savePoseGraph();
+                m_process.unlock();
+                pose_graph_auto_saved = true;
+                printf("[POSEGRAPH]: auto-saved pose graph after 3s of no images\n");
+            }
+        });
     
     VISUALIZATION_SHIFT_X = 0;
     VISUALIZATION_SHIFT_Y = 0;

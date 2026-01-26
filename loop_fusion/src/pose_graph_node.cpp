@@ -20,7 +20,7 @@
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <std_msgs/msg/bool.hpp>
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 #include <iostream>
 //#include <ros/package.h>
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -630,14 +630,14 @@ int main(int argc, char **argv)
     */
 
     // Setup the rest of the publishers
-    auto sub_vio1 = nh->create_subscription<nav_msgs::msg::Odometry>("/vins_estimator/odometry", 2000, std::bind(&App::vio_callback, app.get(), std::placeholders::_1));
-    auto sub_vio2 = nh->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/vins_estimator/pose", 2000, std::bind(&App::vio_callback_pose, app.get(), std::placeholders::_1));
+    // auto sub_vio1 = nh->create_subscription<nav_msgs::msg::Odometry>("/vins_estimator/odometry", 2000, std::bind(&App::vio_callback, app.get(), std::placeholders::_1));
+    auto sub_vio2 = nh->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>("/ov_msckf/poseimu", 2000, std::bind(&App::vio_callback_pose, app.get(), std::placeholders::_1));
     auto sub_image = nh->create_subscription<sensor_msgs::msg::Image>("/cam0/image_raw", 2000, std::bind(&App::image_callback, app.get(), std::placeholders::_1));
-    auto sub_pose = nh->create_subscription<nav_msgs::msg::Odometry>("/vins_estimator/keyframe_pose", 2000, std::bind(&App::pose_callback, app.get(), std::placeholders::_1));
-    auto sub_extrinsic = nh->create_subscription<nav_msgs::msg::Odometry>("/vins_estimator/extrinsic", 2000, std::bind(&App::extrinsic_callback, app.get(), std::placeholders::_1));
-    auto sub_intrinsics = nh->create_subscription<sensor_msgs::msg::CameraInfo>("/vins_estimator/intrinsics", 2000, std::bind(&App::intrinsics_callback, app.get(), std::placeholders::_1));
-    auto sub_point = nh->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/keyframe_point", 2000, std::bind(&App::point_callback, app.get(), std::placeholders::_1));
-    auto sub_margin_point = nh->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/margin_cloud", 2000, std::bind(&App::margin_point_callback, app.get(), std::placeholders::_1));
+    auto sub_pose = nh->create_subscription<nav_msgs::msg::Odometry>("/ov_msckf/loop_pose", 2000, std::bind(&App::pose_callback, app.get(), std::placeholders::_1));
+    auto sub_extrinsic = nh->create_subscription<nav_msgs::msg::Odometry>("/ov_msckf/loop_extrinsic", 2000, std::bind(&App::extrinsic_callback, app.get(), std::placeholders::_1));
+    auto sub_intrinsics = nh->create_subscription<sensor_msgs::msg::CameraInfo>("/ov_msckf/loop_intrinsics", 2000, std::bind(&App::intrinsics_callback, app.get(), std::placeholders::_1));
+    auto sub_point = nh->create_subscription<sensor_msgs::msg::PointCloud>("/ov_msckf/loop_feats", 2000, std::bind(&App::point_callback, app.get(), std::placeholders::_1));
+    // auto sub_margin_point = nh->create_subscription<sensor_msgs::msg::PointCloud>("/vins_estimator/margin_cloud", 2000, std::bind(&App::margin_point_callback, app.get(), std::placeholders::_1));
 
     std::thread measurement_process;
     std::thread keyboard_command_process;

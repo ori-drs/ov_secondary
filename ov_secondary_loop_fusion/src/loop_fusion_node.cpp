@@ -38,7 +38,7 @@
 #include "pose_graph.h"
 #include "utility/CameraPoseVisualization.h"
 #include "parameters.h"
-#include "pose_graph_node.h"
+#include "loop_fusion_node.h"
 
 
 App::App(rclcpp::Node::SharedPtr node, const CommandLineConfig &app_params):
@@ -792,7 +792,7 @@ int main(int argc, char **argv)
     measurement_process = std::thread(process);
     keyboard_command_process = std::thread(command);
     
-    RCLCPP_INFO_STREAM(nh->get_logger(), "pose_graph_node ready");
+    RCLCPP_INFO_STREAM(nh->get_logger(), "loop_fusion_node ready");
     rclcpp::spin(nh);
 
     return 0;

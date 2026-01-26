@@ -44,7 +44,7 @@ catkin build -j4
 # run the OpenVINS system and loop node
 source devel/setup.bash
 roslaunch ov_msckf pgeneva_ros_eth.launch
-roslaunch loop_fusion posegraph.launch
+roslaunch ov_secondary_loop_fusion posegraph.launch
 ```
 
 
@@ -56,21 +56,21 @@ For example on the EurocMav dataset there isn't a clear winner in terms of ATE a
 On these small room datasets, many loop closure candidates are rejected, and thus there are maybe 2-4 loop closures, with V1\_02\_medium dataset having none over the whole trajectory in most cases.
 Also to ensure there are enough points for PnP, the number of tracked features in ov\_msckf needed to be increased to around 300.
 
-![ate eth example](data/ate_eth.png)
+![ate eth example](media/ate_eth.png)
 
 
 On the other hand, there are cases where the loop closure clearly helps.
 For example, on a long dataset such as the corridor1 from the [TUM-VI](https://vision.in.tum.de/data/datasets/visual-inertial-dataset) dataset the system running in monocular mode drifts towards the end of the dataset (blue).
 The loop closure (red) is able to correct this and ensure that the ending pose is correct relative to the start (the sensor system returns to the same location in the bottom left of this trajectory).
 
-![tum example](data/tum_example.png)
+![tum example](media/tum_example.png)
 
 
 Looking at some more quantitative results on the TUM-VI dataset, a few runs on the room datasets can clearly show the advantage of loop closure.
 These room datasets are limits to the same vicon room environment, and get very frequent loop closures due to this.
 From the below table, it is very clear that using the secondary loop closure thread in most cases has a clear performance gain as compared to the standard odometry.
 
-![ate tumvi example](data/ate_tumvi.png)
+![ate tumvi example](media/ate_tumvi.png)
 
 
 
@@ -80,7 +80,7 @@ From the below table, it is very clear that using the secondary loop closure thr
 1. We first wait to ensure we have received an initial camera intrinsic and camera to IMU extrinsic message.
 	- Both of these values will change over time if OpenVINS estimate them online
 	- Thus we will subscribe to updates to get the latest calibration
-2. In `pose_graph_node.cpp` we get an image, pointcloud, odometry messages from the OpenVINS system.
+2. In `loop_fusion_node.cpp` we get an image, pointcloud, odometry messages from the OpenVINS system.
 	- Our pointcloud is special and contains all 3d features (in the global frame) seen from the image
 	- Additionally, it has in its channels the raw uv coordinates, normalized coordinates, and feature id for all features
 	- In this case, our image/pointcloud/odometry will all be of the last marginalized clone in OpenVINS
@@ -120,5 +120,4 @@ From the below table, it is very clear that using the secondary loop closure thr
 * How best to quantify that we have a good PnP result from RANSAC?
 * Features that are used are never improved, nor optimized again, they are taken to be "true"
 * Tuning the system is difficult and can hurt performance if not properly tuned
-
 

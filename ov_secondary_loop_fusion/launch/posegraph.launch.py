@@ -8,7 +8,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             Node(
-                package="loop_fusion",
+                package="ov_secondary_loop_fusion",
                 executable="loop_fusion_node",
                 name="loop_fusion_node",
                 output="screen",
@@ -16,13 +16,13 @@ def generate_launch_description():
                 parameters=[
                     {
                         "config_file": PathJoinSubstitution(
-                            [FindPackageShare("loop_fusion"), "config", "master_config.yaml"]
+                            [FindPackageShare("ov_secondary_loop_fusion"), "config", "master_config.yaml"]
                         ),
                         "vocabulary_file": PathJoinSubstitution(
-                            [FindPackageShare("loop_fusion"), "data", "brief_k10L6.bin"]
+                            [FindPackageShare("ov_secondary_loop_fusion"), "data", "brief_k10L6.bin"]
                         ),
                         "brief_pattern_file": PathJoinSubstitution(
-                            [FindPackageShare("loop_fusion"), "data", "brief_pattern.yml"]
+                            [FindPackageShare("ov_secondary_loop_fusion"), "data", "brief_pattern.yml"]
                         ),
                     }
                 ],

@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>loop_fusion</name>
+  <name>ov_secondary_loop_fusion</name>
   <version>0.0.0</version>
-  <description>The loop_fusion package</description>
+  <description>The ov_secondary_loop_fusion package</description>
   <maintainer email="dvorak@todo.todo">dvorak</maintainer>
   <license>TODO</license>
 
@@ -16,7 +16,7 @@
   <depend>visualization_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>ament_index_cpp</depend>
-  <depend>camera_models</depend>
+  <depend>ov_secondary_camera_models</depend>
 
   <export>
     <build_type>ament_cmake</build_type>

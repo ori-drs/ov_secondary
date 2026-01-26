@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(camera_models)
+project(ov_secondary_camera_models)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE "Release")
@@ -54,7 +54,7 @@ add_library(${PROJECT_NAME}
     src/gpl/EigenQuaternionParameterization.cc)
 
 target_link_libraries(Calibrations ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
-target_link_libraries(camera_models ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
 
 #############

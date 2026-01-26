@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(loop_fusion)
+project(ov_secondary_loop_fusion)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE "Release")
@@ -15,13 +15,13 @@ find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(ament_index_cpp REQUIRED)
-find_package(camera_models REQUIRED)
+find_package(ov_secondary_camera_models REQUIRED)
 
 
 include_directories(include ${CERES_INCLUDE_DIRS}  ${EIGEN3_INCLUDE_DIR})
 
 add_executable(loop_fusion_node
-    src/pose_graph_node.cpp
+    src/loop_fusion_node.cpp
     src/pose_graph.cpp
     src/keyframe.cpp
     src/utility/CameraPoseVisualization.cpp
@@ -57,6 +57,6 @@ ament_target_dependencies(loop_fusion_node
   visualization_msgs
   cv_bridge
   ament_index_cpp
-  camera_models
+  ov_secondary_camera_models
 )
 ament_package()

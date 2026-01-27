@@ -19,7 +19,8 @@
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
 #include <sensor_msgs/image_encodings.hpp>
-#include <cv_bridge/cv_bridge.hpp>
+//#include <cv_bridge/cv_bridge.h> // needed for Humble and 22.04
+#include <cv_bridge/cv_bridge.hpp> // needed for Jazzy and 24.04
 
 extern camodocal::CameraPtr m_camera;
 extern double max_focallength;

@@ -22,7 +22,8 @@
 #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <std_msgs/msg/bool.hpp>
-#include <cv_bridge/cv_bridge.hpp>
+//#include <cv_bridge/cv_bridge.h> // needed for Humble and 22.04
+#include <cv_bridge/cv_bridge.hpp> // needed for Jazzy and 24.04
 #include <filesystem>
 #include <iostream>
 //#include <ros/package.h>

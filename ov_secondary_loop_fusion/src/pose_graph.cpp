@@ -150,11 +150,11 @@ PoseGraph::~PoseGraph()
 
 void PoseGraph::registerPub(rclcpp::Node::SharedPtr node){
 
-    pub_pg_path = node->create_publisher<nav_msgs::msg::Path>("/pose_graph_path", 1000);
-    pub_base_path = node->create_publisher<nav_msgs::msg::Path>("/base_path", 1000);
-    pub_pose_graph = node->create_publisher<visualization_msgs::msg::MarkerArray>("/pose_graph", 1000);
+    pub_pg_path = node->create_publisher<nav_msgs::msg::Path>("/ov_secondary/pose_graph_path", 1000);
+    pub_base_path = node->create_publisher<nav_msgs::msg::Path>("/ov_secondary/base_path", 1000);
+    pub_pose_graph = node->create_publisher<visualization_msgs::msg::MarkerArray>("/ov_secondary/pose_graph", 1000);
     for (int i = 1; i < 10; i++)
-        pub_path[i] = node->create_publisher<nav_msgs::msg::Path>("/path_" + to_string(i), 1000);
+        pub_path[i] = node->create_publisher<nav_msgs::msg::Path>("/ov_secondary/path_" + to_string(i), 1000);
 }
 
 void PoseGraph::setIMUFlag(bool _use_imu)

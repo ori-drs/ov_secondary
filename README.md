@@ -121,3 +121,10 @@ From the below table, it is very clear that using the secondary loop closure thr
 * Features that are used are never improved, nor optimized again, they are taken to be "true"
 * Tuning the system is difficult and can hurt performance if not properly tuned
 
+
+## Update Notes
+
+This repo was updated to ROS2 by Dynamic Robotic Systems Group (Oxford Robotics Institute) in 2026. It currently targets ROS2 Jazzy and Ubuntu 24.04. ROS2 Humble and Ubuntu 22.04 also works with minor modifications. It's requires OpenCV version 4.
+
+The ROS1 version of the repo runs with Ubuntu 18.04 and complies as of 2026.
+

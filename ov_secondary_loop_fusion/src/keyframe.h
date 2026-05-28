@@ -15,6 +15,7 @@
 #include <eigen3/Eigen/Dense>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core/eigen.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 #include "camodocal/camera_models/CameraFactory.h"
 #include "camodocal/camera_models/CataCamera.h"
 #include "camodocal/camera_models/PinholeCamera.h"
@@ -34,21 +35,24 @@ class BriefExtractor
 {
 public:
   virtual void operator()(const cv::Mat &im, vector<cv::KeyPoint> &keys, vector<BRIEF::bitset> &descriptors) const;
-  BriefExtractor(const std::string &pattern_file);
+	BriefExtractor(const std::string &pattern_file);
 
-  DVision::BRIEF m_brief;
+	DVision::BRIEF m_brief;
 };
 
 class KeyFrame
 {
 public:
-	KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, cv::Mat &_image,
+	KeyFrame(const builtin_interfaces::msg::Time &_header_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, cv::Mat &_image,
 			 vector<cv::Point3f> &_point_3d, vector<cv::Point2f> &_point_2d_uv, vector<cv::Point2f> &_point_2d_normal, 
-			 vector<double> &_point_id, int _sequence);
-	KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, Vector3d &_T_w_i, Matrix3d &_R_w_i,
+			 vector<double> &_point_id, int _sequence, const Vector3d &_T_i_c, const Matrix3d &_R_i_c,
+			 const camodocal::CameraPtr &_camera);
+	KeyFrame(const builtin_interfaces::msg::Time &_header_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, Vector3d &_T_w_i, Matrix3d &_R_w_i,
 			 cv::Mat &_image, int _loop_index, Eigen::Matrix<double, 8, 1 > &_loop_info,
-			 vector<cv::KeyPoint> &_keypoints, vector<cv::KeyPoint> &_keypoints_norm, vector<BRIEF::bitset> &_brief_descriptors);
-	bool findConnection(KeyFrame* old_kf);
+			 vector<cv::KeyPoint> &_keypoints, vector<cv::KeyPoint> &_keypoints_norm, vector<BRIEF::bitset> &_brief_descriptors,
+			 const Vector3d &_T_i_c, const Matrix3d &_R_i_c,
+			 const camodocal::CameraPtr &_camera);
+	bool findConnection(KeyFrame* old_kf, int *loop_feat_num = nullptr);
 	void computeWindowBRIEFPoint();
 	void computeBRIEFPoint();
 	//void extractBrief();
@@ -71,11 +75,24 @@ public:
 	void PnPRANSAC(const vector<cv::Point2f> &matched_2d_old_norm,
 	               const std::vector<cv::Point3f> &matched_3d,
 	               std::vector<uchar> &status,
-	               Eigen::Vector3d &PnP_T_old, Eigen::Matrix3d &PnP_R_old);
+	               Eigen::Vector3d &PnP_T_old, Eigen::Matrix3d &PnP_R_old,
+	               const Eigen::Vector3d &old_T_i_c, const Eigen::Matrix3d &old_R_i_c,
+	               bool old_fixed_calibration, double old_max_focallength);
 	void getVioPose(Eigen::Vector3d &_T_w_i, Eigen::Matrix3d &_R_w_i);
 	void getPose(Eigen::Vector3d &_T_w_i, Eigen::Matrix3d &_R_w_i);
+	void getCameraPose(Eigen::Vector3d &_T_w_c, Eigen::Matrix3d &_R_w_c);
 	void updatePose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &_R_w_i);
 	void updateVioPose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &_R_w_i);
+	void updateExtrinsics(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c);
+	void updateCalibration(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c,
+	                       const camodocal::CameraPtr &_camera);
+	void updateIntrinsics(const camodocal::CameraPtr &_camera);
+	void refreshRuntimePointNormals(const camodocal::CameraPtr &_camera);
+	void refreshRuntimeKeypointNormals(const camodocal::CameraPtr &_camera);
+	bool hasFixedCalibration() const;
+	bool getCameraParameters(int &model_type, int &width, int &height,
+	                         std::vector<double> &parameters) const;
+	double getMaxFocalLength() const;
 	void updateLoop(Eigen::Matrix<double, 8, 1 > &_loop_info);
 
 	Eigen::Vector3d getLoopRelativeT();
@@ -85,12 +102,17 @@ public:
 
 
 	double time_stamp; 
+	builtin_interfaces::msg::Time header_stamp;
 	int index;
 	int local_index;
 	Eigen::Vector3d vio_T_w_i; 
 	Eigen::Matrix3d vio_R_w_i; 
 	Eigen::Vector3d T_w_i;
 	Eigen::Matrix3d R_w_i;
+	Eigen::Vector3d T_i_c;
+	Eigen::Matrix3d R_i_c;
+	camodocal::CameraPtr camera;
+	double camera_max_focallength;
 	Eigen::Vector3d origin_vio_T;		
 	Eigen::Matrix3d origin_vio_R;
 	cv::Mat image;
@@ -105,10 +127,10 @@ public:
 	vector<BRIEF::bitset> brief_descriptors;
 	vector<BRIEF::bitset> window_brief_descriptors;
 	bool has_fast_point;
+	bool fixed_calibration;
 	int sequence;
 
 	bool has_loop;
 	int loop_index;
 	Eigen::Matrix<double, 8, 1 > loop_info;
 };
-

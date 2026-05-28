@@ -10,9 +10,82 @@
  *******************************************************/
 
 #include "keyframe.h"
+#include <algorithm>
 #include <cmath>
-#include <cmath>
-#include <std_msgs/msg/header.hpp>
+
+namespace {
+
+double StampToSeconds(const builtin_interfaces::msg::Time &stamp)
+{
+	return static_cast<double>(stamp.sec) + static_cast<double>(stamp.nanosec) * 1e-9;
+}
+
+camodocal::CameraPtr CloneCamera(const camodocal::CameraPtr &source)
+{
+    if (!source)
+        return camodocal::CameraPtr();
+
+    camodocal::CameraPtr cloned =
+        camodocal::CameraFactory::instance()->generateCamera(
+            source->modelType(),
+            source->cameraName(),
+            cv::Size(source->imageWidth(), source->imageHeight()));
+    std::vector<double> parameters;
+    source->writeParameters(parameters);
+    cloned->readParameters(parameters);
+    return cloned;
+}
+
+double CameraMaxFocalLength(const camodocal::CameraPtr &source)
+{
+    if (!source)
+        return max_focallength;
+
+    std::vector<double> parameters;
+    source->writeParameters(parameters);
+    if (parameters.size() >= 6)
+        return std::max(parameters[4], parameters[5]);
+    return max_focallength;
+}
+
+cv::Point2f LiftToNormalizedPoint(const camodocal::CameraPtr &source, const cv::Point2f &pixel)
+{
+    Eigen::Vector3d bearing;
+    source->liftProjective(Eigen::Vector2d(pixel.x, pixel.y), bearing);
+    return cv::Point2f(bearing.x() / bearing.z(), bearing.y() / bearing.z());
+}
+
+void NormalizePointVector(const camodocal::CameraPtr &source,
+                          const std::vector<cv::Point2f> &pixels,
+                          std::vector<cv::Point2f> &normalized)
+{
+    if (!source)
+        return;
+
+    normalized.clear();
+    normalized.reserve(pixels.size());
+    for (const cv::Point2f &pixel : pixels)
+        normalized.push_back(LiftToNormalizedPoint(source, pixel));
+}
+
+void NormalizeKeypointVector(const camodocal::CameraPtr &source,
+                             const std::vector<cv::KeyPoint> &pixels,
+                             std::vector<cv::KeyPoint> &normalized)
+{
+    if (!source)
+        return;
+
+    normalized.clear();
+    normalized.reserve(pixels.size());
+    for (const cv::KeyPoint &keypoint : pixels)
+    {
+        cv::KeyPoint normalized_keypoint = keypoint;
+        normalized_keypoint.pt = LiftToNormalizedPoint(source, keypoint.pt);
+        normalized.push_back(normalized_keypoint);
+    }
+}
+
+}  // namespace
 
 template <typename Derived>
 static void reduceVector(vector<Derived> &v, vector<uchar> status)
@@ -25,16 +98,22 @@ static void reduceVector(vector<Derived> &v, vector<uchar> status)
 }
 
 // create keyframe online
-KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, cv::Mat &_image,
+KeyFrame::KeyFrame(const builtin_interfaces::msg::Time &_header_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, cv::Mat &_image,
 		           vector<cv::Point3f> &_point_3d, vector<cv::Point2f> &_point_2d_uv, vector<cv::Point2f> &_point_2d_norm,
-		           vector<double> &_point_id, int _sequence)
+		           vector<double> &_point_id, int _sequence, const Vector3d &_T_i_c, const Matrix3d &_R_i_c,
+		           const camodocal::CameraPtr &_camera)
 {
-	time_stamp = _time_stamp;
+	header_stamp = _header_stamp;
+	time_stamp = StampToSeconds(header_stamp);
 	index = _index;
 	vio_T_w_i = _vio_T_w_i;
 	vio_R_w_i = _vio_R_w_i;
 	T_w_i = vio_T_w_i;
 	R_w_i = vio_R_w_i;
+	T_i_c = _T_i_c;
+	R_i_c = _R_i_c;
+	camera = CloneCamera(_camera ? _camera : m_camera);
+	camera_max_focallength = CameraMaxFocalLength(camera);
 	origin_vio_T = vio_T_w_i;		
 	origin_vio_R = vio_R_w_i;
 	image = _image.clone();
@@ -46,6 +125,7 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 	has_loop = false;
 	loop_index = -1;
 	has_fast_point = false;
+	fixed_calibration = false;
 	loop_info << 0, 0, 0, 0, 0, 0, 0, 0;
 	sequence = _sequence;
 	computeWindowBRIEFPoint();
@@ -55,11 +135,14 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 }
 
 // load previous keyframe
-KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, Vector3d &_T_w_i, Matrix3d &_R_w_i,
+KeyFrame::KeyFrame(const builtin_interfaces::msg::Time &_header_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3d &_vio_R_w_i, Vector3d &_T_w_i, Matrix3d &_R_w_i,
 					cv::Mat &_image, int _loop_index, Eigen::Matrix<double, 8, 1 > &_loop_info,
-					vector<cv::KeyPoint> &_keypoints, vector<cv::KeyPoint> &_keypoints_norm, vector<BRIEF::bitset> &_brief_descriptors)
+					vector<cv::KeyPoint> &_keypoints, vector<cv::KeyPoint> &_keypoints_norm, vector<BRIEF::bitset> &_brief_descriptors,
+					const Vector3d &_T_i_c, const Matrix3d &_R_i_c,
+					const camodocal::CameraPtr &_camera)
 {
-	time_stamp = _time_stamp;
+	header_stamp = _header_stamp;
+	time_stamp = StampToSeconds(header_stamp);
 	index = _index;
 	//vio_T_w_i = _vio_T_w_i;
 	//vio_R_w_i = _vio_R_w_i;
@@ -67,6 +150,10 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 	vio_R_w_i = _R_w_i;
 	T_w_i = _T_w_i;
 	R_w_i = _R_w_i;
+	T_i_c = _T_i_c;
+	R_i_c = _R_i_c;
+	camera = CloneCamera(_camera ? _camera : m_camera);
+	camera_max_focallength = CameraMaxFocalLength(camera);
 	if (DEBUG_IMAGE)
 	{
 		image = _image.clone();
@@ -79,6 +166,7 @@ KeyFrame::KeyFrame(double _time_stamp, int _index, Vector3d &_vio_T_w_i, Matrix3
 	loop_index = _loop_index;
 	loop_info = _loop_info;
 	has_fast_point = false;
+	fixed_calibration = true;
 	sequence = 0;
 	keypoints = _keypoints;
 	keypoints_norm = _keypoints_norm;
@@ -105,7 +193,7 @@ void KeyFrame::computeBRIEFPoint()
 	if(1)
 	{
         //cv::FAST(image, keypoints, fast_th, true);
-        Grider_FAST::perform_griding(image, keypoints, 200, 1, 1, fast_th, true);
+        Grider_FAST::perform_griding(image, keypoints, 500, 1, 1, fast_th, true);
 	}
 	else
     {
@@ -129,14 +217,7 @@ void KeyFrame::computeBRIEFPoint()
 
     // extract and save
 	extractor(image, keypoints, brief_descriptors);
-	for (int i = 0; i < (int)keypoints.size(); i++)
-	{
-        Eigen::Vector3d tmp_p;
-        m_camera->liftProjective(Eigen::Vector2d(keypoints[i].pt.x, keypoints[i].pt.y), tmp_p);
-        cv::KeyPoint tmp_norm;
-        tmp_norm.pt = cv::Point2f(tmp_p.x()/tmp_p.z(), tmp_p.y()/tmp_p.z());
-		keypoints_norm.push_back(tmp_norm);
-	}
+    refreshRuntimeKeypointNormals(m_camera);
 }
 
 void BriefExtractor::operator() (const cv::Mat &im, vector<cv::KeyPoint> &keys, vector<BRIEF::bitset> &descriptors) const
@@ -166,7 +247,7 @@ bool KeyFrame::searchInAera(const BRIEF::bitset window_descriptor,
         }
     }
     //printf("[POSEGRAPH]: best dist %d", bestDist);
-    if (bestIndex != -1 && bestDist < 80)
+    if (bestIndex != -1 && bestDist < BRIEF_MATCH_HAMMING_THRESH)
     {
       best_match = keypoints_old[bestIndex].pt;
       best_match_norm = keypoints_old_norm[bestIndex].pt;
@@ -225,9 +306,11 @@ void KeyFrame::FundmantalMatrixRANSAC(const std::vector<cv::Point2f> &matched_2d
 }
 
 void KeyFrame::PnPRANSAC(const vector<cv::Point2f> &matched_2d_old_norm,
-                         const std::vector<cv::Point3f> &matched_3d,
-                         std::vector<uchar> &status,
-                         Eigen::Vector3d &PnP_T_old, Eigen::Matrix3d &PnP_R_old)
+	                         const std::vector<cv::Point3f> &matched_3d,
+	                         std::vector<uchar> &status,
+	                         Eigen::Vector3d &PnP_T_old, Eigen::Matrix3d &PnP_R_old,
+	                         const Eigen::Vector3d &old_T_i_c, const Eigen::Matrix3d &old_R_i_c,
+	                         bool old_fixed_calibration, double old_max_focallength)
 {
 	//for (int i = 0; i < matched_3d.size(); i++)
 	//	printf("[POSEGRAPH]: 3d x: %f, y: %f, z: %f\n",matched_3d[i].x, matched_3d[i].y, matched_3d[i].z );
@@ -236,8 +319,10 @@ void KeyFrame::PnPRANSAC(const vector<cv::Point2f> &matched_2d_old_norm,
     cv::Mat K = (cv::Mat_<double>(3, 3) << 1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0);
     Matrix3d R_inital;
     Vector3d P_inital;
-    Matrix3d R_w_c = origin_vio_R * qic;
-    Vector3d T_w_c = origin_vio_T + origin_vio_R * tic;
+    const Matrix3d current_R_i_c = fixed_calibration ? R_i_c : qic;
+    const Vector3d current_T_i_c = fixed_calibration ? T_i_c : tic;
+    Matrix3d R_w_c = origin_vio_R * current_R_i_c;
+    Vector3d T_w_c = origin_vio_T + origin_vio_R * current_T_i_c;
 
     R_inital = R_w_c.inverse();
     P_inital = -(R_inital * T_w_c);
@@ -250,14 +335,16 @@ void KeyFrame::PnPRANSAC(const vector<cv::Point2f> &matched_2d_old_norm,
     TicToc t_pnp_ransac;
 
     int flags = cv::SOLVEPNP_EPNP; // SOLVEPNP_EPNP, SOLVEPNP_ITERATIVE
+    const double ransac_focallength =
+        old_fixed_calibration && old_max_focallength > 0.0 ? old_max_focallength : max_focallength;
     if (CV_MAJOR_VERSION < 3)
-        solvePnPRansac(matched_3d, matched_2d_old_norm, K, D, rvec, t, true, 200, PNP_INFLATION / max_focallength, 100, inliers, flags);
+        solvePnPRansac(matched_3d, matched_2d_old_norm, K, D, rvec, t, true, 200, PNP_INFLATION / ransac_focallength, 100, inliers, flags);
     else
     {
         if (CV_MINOR_VERSION < 2)
-            solvePnPRansac(matched_3d, matched_2d_old_norm, K, D, rvec, t, true, 200, sqrt(PNP_INFLATION / max_focallength), 0.99, inliers, flags);
+            solvePnPRansac(matched_3d, matched_2d_old_norm, K, D, rvec, t, true, 200, sqrt(PNP_INFLATION / ransac_focallength), 0.99, inliers, flags);
         else
-            solvePnPRansac(matched_3d, matched_2d_old_norm, K, D, rvec, t, true, 200, PNP_INFLATION / max_focallength, 0.99, inliers, flags);
+            solvePnPRansac(matched_3d, matched_2d_old_norm, K, D, rvec, t, true, 200, PNP_INFLATION / ransac_focallength, 0.99, inliers, flags);
 
     }
 
@@ -278,14 +365,22 @@ void KeyFrame::PnPRANSAC(const vector<cv::Point2f> &matched_2d_old_norm,
     cv::cv2eigen(t, T_pnp);
     T_w_c_old = R_w_c_old * (-T_pnp);
 
-    PnP_R_old = R_w_c_old * qic.transpose();
-    PnP_T_old = T_w_c_old - PnP_R_old * tic;
+    const Matrix3d pnp_old_R_i_c = old_fixed_calibration ? old_R_i_c : qic;
+    const Vector3d pnp_old_T_i_c = old_fixed_calibration ? old_T_i_c : tic;
+    PnP_R_old = R_w_c_old * pnp_old_R_i_c.transpose();
+    PnP_T_old = T_w_c_old - PnP_R_old * pnp_old_T_i_c;
 
 }
 
 
-bool KeyFrame::findConnection(KeyFrame* old_kf)
+bool KeyFrame::findConnection(KeyFrame* old_kf, int *loop_feat_num)
 {
+    if (loop_feat_num != nullptr)
+        *loop_feat_num = 0;
+
+    if (old_kf == nullptr)
+        return false;
+
 	TicToc tmp_t;
 	//printf("[POSEGRAPH]: find Connection\n");
 	vector<cv::Point2f> matched_2d_cur, matched_2d_old;
@@ -294,20 +389,8 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 	vector<double> matched_id;
 	vector<uchar> status;
 
-    // re-undistort with the latest intrinsic values
-    for (int i = 0; i < (int)point_2d_uv.size(); i++) {
-        Eigen::Vector3d tmp_p;
-        m_camera->liftProjective(Eigen::Vector2d(point_2d_uv[i].x, point_2d_uv[i].y), tmp_p);
-        point_2d_norm.push_back(cv::Point2f(tmp_p.x()/tmp_p.z(), tmp_p.y()/tmp_p.z()));
-    }
-    old_kf->keypoints_norm.clear();
-    for (int i = 0; i < (int)old_kf->keypoints.size(); i++) {
-        Eigen::Vector3d tmp_p;
-        m_camera->liftProjective(Eigen::Vector2d(old_kf->keypoints[i].pt.x, old_kf->keypoints[i].pt.y), tmp_p);
-        cv::KeyPoint tmp_norm;
-        tmp_norm.pt = cv::Point2f(tmp_p.x()/tmp_p.z(), tmp_p.y()/tmp_p.z());
-        old_kf->keypoints_norm.push_back(tmp_norm);
-    }
+    refreshRuntimePointNormals(m_camera);
+    old_kf->refreshRuntimeKeypointNormals(m_camera);
 
     matched_3d = point_3d;
     matched_2d_cur = point_2d_uv;
@@ -321,7 +404,7 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 	        cv::Mat gray_img, loop_match_img;
 	        cv::Mat old_img = old_kf->image;
 	        cv::hconcat(image, old_img, gray_img);
-	        cvtColor(gray_img, loop_match_img, CV_GRAY2RGB);
+	        cvtColor(gray_img, loop_match_img, cv::COLOR_GRAY2RGB);
 	        for(int i = 0; i< (int)point_2d_uv.size(); i++)
 	        {
 	            cv::Point2f cur_pt = point_2d_uv[i];
@@ -359,7 +442,7 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
             cv::Mat old_img = old_kf->image;
             cv::hconcat(image, gap_image, gap_image);
             cv::hconcat(gap_image, old_img, gray_img);
-            cvtColor(gray_img, loop_match_img, CV_GRAY2RGB);
+            cvtColor(gray_img, loop_match_img, cv::COLOR_GRAY2RGB);
 	        for(int i = 0; i< (int)matched_2d_cur.size(); i++)
 	        {
 	            cv::Point2f cur_pt = matched_2d_cur[i];
@@ -415,7 +498,7 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
             cv::Mat old_img = old_kf->image;
             cv::hconcat(image, gap_image, gap_image);
             cv::hconcat(gap_image, old_img, gray_img);
-            cvtColor(gray_img, loop_match_img, CV_GRAY2RGB);
+            cvtColor(gray_img, loop_match_img, cv::COLOR_GRAY2RGB);
 	        for(int i = 0; i< (int)matched_2d_cur.size(); i++)
 	        {
 	            cv::Point2f cur_pt = matched_2d_cur[i];
@@ -449,7 +532,9 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 	if ((int)matched_2d_cur.size() > MIN_LOOP_NUM)
 	{
 		status.clear();
-	    PnPRANSAC(matched_2d_old_norm, matched_3d, status, PnP_T_old, PnP_R_old);
+	    PnPRANSAC(matched_2d_old_norm, matched_3d, status, PnP_T_old, PnP_R_old,
+	              old_kf->T_i_c, old_kf->R_i_c, old_kf->hasFixedCalibration(),
+	              old_kf->getMaxFocalLength());
 	    reduceVector(matched_2d_cur, status);
 	    reduceVector(matched_2d_old, status);
 	    reduceVector(matched_2d_cur_norm, status);
@@ -465,7 +550,7 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 	            cv::Mat old_img = old_kf->image;
 	            cv::hconcat(image, gap_image, gap_image);
 	            cv::hconcat(gap_image, old_img, gray_img);
-	            cvtColor(gray_img, loop_match_img, CV_GRAY2RGB);
+	            cvtColor(gray_img, loop_match_img, cv::COLOR_GRAY2RGB);
 	            for(int i = 0; i< (int)matched_2d_cur.size(); i++)
 	            {
 	                cv::Point2f cur_pt = matched_2d_cur[i];
@@ -496,29 +581,15 @@ bool KeyFrame::findConnection(KeyFrame* old_kf)
 	                    << old_kf->index << "-" << "3pnp_match.jpg";
 	            cv::imwrite( path.str().c_str(), loop_match_img);
 	            */
-	            if ((int)matched_2d_cur.size() > MIN_LOOP_NUM)
-	            {
-	            	/*
-	            	cv::imshow("loop connection",loop_match_img);  
-	            	cv::waitKey(10);  
-	            	*/
-	            	cv::Mat thumbimage;
-	            	cv::resize(loop_match_img, thumbimage, cv::Size(loop_match_img.cols / 2, loop_match_img.rows / 2));
-	            	if (pub_match_img)
-	            	{
-	    	    		auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", thumbimage).toImageMsg();
-	                    auto stamp_ns = static_cast<int64_t>(std::llround(time_stamp * 1e9));
-	                    msg->header.stamp.sec = static_cast<int32_t>(stamp_ns / 1000000000LL);
-	                    msg->header.stamp.nanosec = static_cast<uint32_t>(stamp_ns % 1000000000LL);
-	    	    		pub_match_img->publish(*msg);
-	            	}
-	            }
 	        }
 	    #endif
 	}
 
 	if ((int)matched_2d_cur.size() > MIN_LOOP_NUM)
 	{
+        if (loop_feat_num != nullptr)
+            *loop_feat_num = static_cast<int>(matched_2d_cur.size());
+
 	    relative_t = PnP_R_old.transpose() * (origin_vio_T - PnP_T_old);
 	    relative_q = PnP_R_old.transpose() * origin_vio_R;
 	    relative_yaw = Utility::normalizeAngle(Utility::R2ypr(origin_vio_R).x() - Utility::R2ypr(PnP_R_old).x());
@@ -562,6 +633,12 @@ void KeyFrame::getPose(Eigen::Vector3d &_T_w_i, Eigen::Matrix3d &_R_w_i)
     _R_w_i = R_w_i;
 }
 
+void KeyFrame::getCameraPose(Eigen::Vector3d &_T_w_c, Eigen::Matrix3d &_R_w_c)
+{
+    _T_w_c = T_w_i + R_w_i * T_i_c;
+    _R_w_c = R_w_i * R_i_c;
+}
+
 void KeyFrame::updatePose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3d &_R_w_i)
 {
     T_w_i = _T_w_i;
@@ -574,6 +651,74 @@ void KeyFrame::updateVioPose(const Eigen::Vector3d &_T_w_i, const Eigen::Matrix3
 	vio_R_w_i = _R_w_i;
 	T_w_i = vio_T_w_i;
 	R_w_i = vio_R_w_i;
+}
+
+void KeyFrame::updateExtrinsics(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c)
+{
+	if (fixed_calibration)
+		return;
+	T_i_c = _T_i_c;
+	R_i_c = _R_i_c;
+}
+
+void KeyFrame::updateCalibration(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c,
+                                 const camodocal::CameraPtr &_camera)
+{
+    if (fixed_calibration)
+        return;
+    T_i_c = _T_i_c;
+    R_i_c = _R_i_c;
+    updateIntrinsics(_camera);
+}
+
+void KeyFrame::updateIntrinsics(const camodocal::CameraPtr &_camera)
+{
+    if (fixed_calibration || !_camera)
+        return;
+
+    camera = CloneCamera(_camera);
+    camera_max_focallength = CameraMaxFocalLength(camera);
+
+    NormalizePointVector(camera, point_2d_uv, point_2d_norm);
+    NormalizeKeypointVector(camera, keypoints, keypoints_norm);
+}
+
+void KeyFrame::refreshRuntimePointNormals(const camodocal::CameraPtr &_camera)
+{
+    if (fixed_calibration)
+        return;
+    NormalizePointVector(_camera, point_2d_uv, point_2d_norm);
+}
+
+void KeyFrame::refreshRuntimeKeypointNormals(const camodocal::CameraPtr &_camera)
+{
+    if (fixed_calibration)
+        return;
+    NormalizeKeypointVector(_camera, keypoints, keypoints_norm);
+}
+
+bool KeyFrame::hasFixedCalibration() const
+{
+	return fixed_calibration;
+}
+
+bool KeyFrame::getCameraParameters(int &model_type, int &width, int &height,
+                                   std::vector<double> &parameters) const
+{
+    camodocal::CameraPtr source = camera ? camera : m_camera;
+    if (!source)
+        return false;
+
+    model_type = static_cast<int>(source->modelType());
+    width = source->imageWidth();
+    height = source->imageHeight();
+    source->writeParameters(parameters);
+    return true;
+}
+
+double KeyFrame::getMaxFocalLength() const
+{
+    return camera_max_focallength > 0.0 ? camera_max_focallength : max_focallength;
 }
 
 Eigen::Vector3d KeyFrame::getLoopRelativeT()

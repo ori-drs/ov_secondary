@@ -16,11 +16,10 @@
 #include "camodocal/camera_models/PinholeCamera.h"
 #include <eigen3/Eigen/Dense>
 #include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
+#include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
+#include <sensor_msgs/msg/compressed_image.hpp>
 #include <sensor_msgs/msg/point_cloud.hpp>
-#include <sensor_msgs/image_encodings.hpp>
-//#include <cv_bridge/cv_bridge.h> // needed for Humble and 22.04
-#include <cv_bridge/cv_bridge.hpp> // needed for Jazzy and 24.04
 
 extern camodocal::CameraPtr m_camera;
 extern double max_focallength;
@@ -30,20 +29,26 @@ extern int RECALL_IGNORE_RECENT_COUNT;
 extern double MAX_THETA_DIFF;
 extern double MAX_POS_DIFF;
 extern int MIN_LOOP_NUM;
+extern int BRIEF_MATCH_HAMMING_THRESH;
 extern double MIN_OPTIMIZATION_TIME_DIFF;
 extern Eigen::Vector3d tic;
 extern Eigen::Matrix3d qic;
-extern rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_match_img;
 extern int VISUALIZATION_SHIFT_X;
 extern int VISUALIZATION_SHIFT_Y;
 extern std::string BRIEF_PATTERN_FILE;
 extern std::string POSE_GRAPH_SAVE_PATH;
 extern std::string POSE_GRAPH_LOAD_PATH;
-extern std::string LOOP_RESULT_FOLDER;
 extern int ROW;
 extern int COL;
-extern std::string VINS_RESULT_PATH;
-extern std::string VINS_RESULT_FOLDER;
-extern std::string VINS_ALL_TRAJ_FOLDER;
+extern std::string OUTPUT_PATH;
+extern std::string TRAJECTORY_BAG_TOPIC;
+extern std::string ODOMETRY_BAG_TOPIC;
+extern std::string IMAGE_BAG_TOPIC;
 extern int DEBUG_IMAGE;
-extern bool SAVE_CAM_POSES;
+
+void initialize_bag_writer(const std::string &bag_path);
+void close_bag_writer();
+void write_trajectory_to_bag(const nav_msgs::msg::Path &trajectory);
+void write_final_trajectory_to_bag(const nav_msgs::msg::Path &trajectory);
+void write_odometry_to_bag(const nav_msgs::msg::Odometry &odometry);
+void write_compressed_image_to_bag(const sensor_msgs::msg::CompressedImage &image);

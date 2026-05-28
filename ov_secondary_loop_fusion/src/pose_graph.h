@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <map>
 #include <thread>
 #include <mutex>
 #include <opencv2/opencv.hpp>
@@ -28,17 +30,11 @@
 #include "keyframe.h"
 #include "utility/tic_toc.h"
 #include "utility/utility.h"
-#include "utility/CameraPoseVisualization.h"
-#include "utility/tic_toc.h"
 #include "ThirdParty/DBoW/DBoW2.h"
 #include "ThirdParty/DVision/DVision.h"
 #include "ThirdParty/DBoW/TemplatedDatabase.h"
 #include "ThirdParty/DBoW/TemplatedVocabulary.h"
 
-
-#define SHOW_S_EDGE false
-#define SHOW_L_EDGE true
-#define SAVE_LOOP_PATH true
 
 using namespace DVision;
 using namespace DBoW2;
@@ -56,10 +52,20 @@ public:
 	KeyFrame* getKeyFrame(int index);
 	nav_msgs::msg::Path path[10];
 	nav_msgs::msg::Path base_path;
-	CameraPoseVisualization* posegraph_visualization;
 	void savePoseGraph();
+	void writeFinalTrajectoryToBag();
+	void saveFinalTrajectoryTum(const std::string &file_path);
+	void updateAllKeyframeExtrinsics(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c);
+	void updateAllKeyframeCalibration(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c,
+	                                  const camodocal::CameraPtr &_camera);
+	void saveDebugTrajectoriesAndLoopEdges(const std::string &output_dir,
+	                                       const std::map<int, std::string> &session_output_names);
 	void loadPoseGraph();
 	void publish();
+	bool hasPendingOptimization();
+	bool isOptimizationRunning();
+	bool requestGlobalOptimization();
+	void waitForOptimizationIdle();
 	Vector3d t_drift;
 	double yaw_drift;
 	Matrix3d r_drift;
@@ -69,11 +75,23 @@ public:
 
 
 private:
-	int detectLoop(KeyFrame* keyframe, int frame_index);
+	enum class CalibrationRefresh
+	{
+		ExtrinsicsOnly,
+		FullCalibration
+	};
+
+	int detectLoop(KeyFrame* keyframe, int frame_index, int *loop_inlier_count = nullptr);
 	void addKeyFrameIntoVoc(KeyFrame* keyframe);
+	bool prepareOptimizationRequest(int &cur_index, int &first_looped_index,
+	                                bool &global_optimization,
+	                                double &current_optimization_header_time);
 	void optimize4DoF();
 	void optimize6DoF();
 	void updatePath();
+	void refreshKeyframeCalibrationUnlocked(const Eigen::Vector3d &_T_i_c, const Eigen::Matrix3d &_R_i_c,
+	                                        const camodocal::CameraPtr &_camera,
+	                                        CalibrationRefresh refresh);
 	list<KeyFrame*> keyframelist;
 	std::mutex m_keyframelist;
 	std::mutex m_optimize_buf;
@@ -81,6 +99,9 @@ private:
 	std::mutex m_drift;
 	std::thread t_optimization;
 	std::queue<int> optimize_buf;
+	std::queue<bool> optimize_global_buf;
+	std::atomic_bool optimization_running;
+	double last_optimization_header_time;
 
 	int global_index;
 	int sequence_cnt;
@@ -93,10 +114,7 @@ private:
 	BriefDatabase db;
 	BriefVocabulary* voc;
 
-	rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_pg_path;
-	rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_base_path;
-	rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub_pose_graph;
-	rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_path[10];
+	rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pub_trajectory;
 };
 
 template <typename T> inline

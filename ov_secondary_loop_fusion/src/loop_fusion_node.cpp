@@ -116,6 +116,38 @@ std::string final_trajectory_tum_path()
     return (std::filesystem::path(OUTPUT_PATH) / "ov_slam" / "trajectory_final.txt").string();
 }
 
+std::string trim_copy(const std::string &value)
+{
+    const auto first = std::find_if_not(value.begin(), value.end(),
+                                        [](unsigned char c) { return std::isspace(c); });
+    const auto last = std::find_if_not(value.rbegin(), value.rend(),
+                                       [](unsigned char c) { return std::isspace(c); }).base();
+    if (first >= last)
+        return "";
+    return std::string(first, last);
+}
+
+std::string strip_inline_comment(const std::string &value)
+{
+    const size_t comment_start = value.find('#');
+    if (comment_start == std::string::npos)
+        return value;
+    return value.substr(0, comment_start);
+}
+
+bool is_null_path_value(const std::string &value)
+{
+    std::string normalized = trim_copy(value);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return normalized.empty() || normalized == "none" || normalized == "null";
+}
+
+std::runtime_error invalid_output_path_error()
+{
+    return std::runtime_error("\033[31minvalid output_path\033[0m");
+}
+
 void refresh_calibration_for_output()
 {
     posegraph.updateAllKeyframeCalibration(tic, qic, m_camera);
@@ -614,8 +646,16 @@ int main(int argc, char **argv)
     //printf("[POSEGRAPH]: cam calib path: %s\n", cam0Path.c_str());
     //m_camera = camodocal::CameraFactory::instance()->generateCameraFromYamlFile(cam0Path.c_str());
 
+    const cv::FileNode output_path_node = fsSettings["output_path"];
+    if (output_path_node.empty() || output_path_node.isNone())
+        throw invalid_output_path_error();
+    if (!output_path_node.isString())
+        throw invalid_output_path_error();
+    output_path_node >> OUTPUT_PATH;
+    OUTPUT_PATH = trim_copy(strip_inline_comment(OUTPUT_PATH));
+    if (is_null_path_value(OUTPUT_PATH))
+        throw invalid_output_path_error();
 
-    fsSettings["output_path"] >> OUTPUT_PATH;
     fsSettings["pose_graph_load_path"] >> POSE_GRAPH_LOAD_PATH;
     if (!POSE_GRAPH_LOAD_PATH.empty() && POSE_GRAPH_LOAD_PATH.back() != '/')
         POSE_GRAPH_LOAD_PATH += "/";
@@ -658,20 +698,15 @@ int main(int argc, char **argv)
         fsSettings["brief_match_hamming_thresh"] >> BRIEF_MATCH_HAMMING_THRESH;
     fsSettings["min_optimization_time_diff"] >> MIN_OPTIMIZATION_TIME_DIFF;
 
-    if (OUTPUT_PATH.empty())
-        throw std::runtime_error("output_path must not be empty");
     std::filesystem::path output_path(OUTPUT_PATH);
+    if (std::filesystem::exists(output_path) && !std::filesystem::is_directory(output_path))
+    {
+        throw invalid_output_path_error();
+    }
     if (!std::filesystem::exists(output_path))
     {
-        throw std::runtime_error(
-            "Configured output_path does not exist. Please create it before launching: " +
-            output_path.string());
-    }
-    if (!std::filesystem::is_directory(output_path))
-    {
-        throw std::runtime_error(
-            "Configured output_path exists but is not a directory: " +
-            output_path.string());
+        std::filesystem::create_directories(output_path);
+        printf("[POSEGRAPH]: created output path: %s\n", output_path.string().c_str());
     }
     const std::filesystem::path ov_slam_output_path = output_path / "ov_slam";
     std::filesystem::remove_all(ov_slam_output_path);
